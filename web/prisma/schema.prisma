@@ -1,0 +1,117 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum TransactionStatus {
+  PENDING
+  EXECUTED
+  BLOCKED
+  FAILED
+}
+
+enum ActorType {
+  AGENT
+  HUMAN
+  SYSTEM
+}
+
+model Policy {
+  id                String   @id @default(cuid())
+  name              String
+  dailyLimit        Float
+  perTxLimit        Float
+  autoApproveBelow  Float    @default(0)
+  whitelist         String   @default("[]") // JSON array of counterparty addresses
+  blacklist         String   @default("[]") // JSON array of counterparty addresses
+  windowStart       String? // e.g. "09:00"
+  windowEnd         String? // e.g. "18:00"
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  approvals    Approval[]
+  transactions Transaction[]
+}
+
+model Agent {
+  id          String   @id @default(cuid())
+  name        String
+  role        String // e.g. "Payment Agent", "Compliance Agent"
+  status      String   @default("offline") // online | offline | busy
+  lastAction  String?
+  createdAt   DateTime @default(now())
+
+  approvals    Approval[]
+  transactions Transaction[]
+  auditLogs    AuditLog[]
+}
+
+model Approval {
+  id          String         @id @default(cuid())
+  policyId    String
+  policy      Policy         @relation(fields: [policyId], references: [id])
+  agentId     String?
+  agent       Agent?         @relation(fields: [agentId], references: [id])
+  amount      Float
+  counterparty String
+  reason      String
+  riskScore   Float          @default(0)
+  status      ApprovalStatus @default(PENDING)
+  expiresAt   DateTime?
+  decidedBy   String?
+  decidedAt   DateTime?
+  createdAt   DateTime       @default(now())
+
+  transaction Transaction?
+  auditLogs   AuditLog[]
+}
+
+model Transaction {
+  id          String            @id @default(cuid())
+  policyId    String
+  policy      Policy            @relation(fields: [policyId], references: [id])
+  agentId     String?
+  agent       Agent?            @relation(fields: [agentId], references: [id])
+  approvalId  String?           @unique
+  approval    Approval?         @relation(fields: [approvalId], references: [id])
+  amount      Float
+  counterparty String
+  status      TransactionStatus @default(PENDING)
+  txHash      String?
+  createdAt   DateTime          @default(now())
+
+  auditLogs AuditLog[]
+}
+
+model AuditLog {
+  id            String      @id @default(cuid())
+  actorType     ActorType
+  actorId       String?
+  agentId       String?
+  agent         Agent?      @relation(fields: [agentId], references: [id])
+  action        String
+  resource      String
+  status        String
+  detail        String?
+  approvalId    String?
+  approval      Approval?   @relation(fields: [approvalId], references: [id])
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  createdAt     DateTime    @default(now())
+}
