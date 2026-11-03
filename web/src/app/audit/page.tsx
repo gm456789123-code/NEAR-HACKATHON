@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type AuditLog = {
+interface AuditLog {
   id: string;
   createdAt: string;
   actorType: string;
@@ -20,7 +20,7 @@ type AuditLog = {
   action: string;
   resource: string;
   status: string;
-};
+}
 
 function statusBadgeClass(status: string) {
   if (status === "ALLOWED") return "border-success/40 text-success";
@@ -33,10 +33,16 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/audit")
-      .then((res) => res.json())
-      .then(setLogs)
-      .finally(() => setLoading(false));
+    async function load() {
+      try {
+        const res = await fetch("/api/audit");
+        const data: AuditLog[] = await res.json();
+        setLogs(data);
+      } finally {
+        setLoading(false);
+      }
+    }
+    void load();
   }, []);
 
   return (

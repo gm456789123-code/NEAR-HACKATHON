@@ -1,4 +1,5 @@
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
+use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::{LookupMap, IterableMap, IterableSet};
 use near_sdk::{env, near, AccountId, PanicOnDefault};
@@ -14,7 +15,7 @@ macro_rules! require {
 /// Minutes since UTC midnight. 0..=1440.
 pub type MinuteOfDay = u16;
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(crate = "near_sdk::serde")]
 #[borsh(crate = "near_sdk::borsh")]
 pub enum Decision {
@@ -39,25 +40,25 @@ pub struct PendingRequest {
     pub id: u64,
     pub agent: AccountId,
     pub counterparty: AccountId,
-    pub amount: u128,
+    pub amount: U128,
     pub reason: String,
     pub status: ApprovalStatus,
-    pub created_at_ns: u64,
+    pub created_at_ns: U64,
     pub decided_by: Option<AccountId>,
-    pub decided_at_ns: Option<u64>,
+    pub decided_at_ns: Option<U64>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "near_sdk::serde")]
 #[borsh(crate = "near_sdk::borsh")]
 pub struct PolicyView {
-    pub daily_limit: u128,
-    pub per_tx_limit: u128,
-    pub auto_approve_below: u128,
+    pub daily_limit: U128,
+    pub per_tx_limit: U128,
+    pub auto_approve_below: U128,
     pub window_start_min: Option<MinuteOfDay>,
     pub window_end_min: Option<MinuteOfDay>,
     pub paused: bool,
-    pub daily_spent_today: u128,
+    pub daily_spent_today: U128,
 }
 
 #[near(contract_state)]
@@ -78,10 +79,10 @@ pub struct PolicyEngine {
     pub whitelist: IterableSet<AccountId>,
     pub blacklist: IterableSet<AccountId>,
 
-    /// Accounts allowed to call check_policy / execute_if_allowed on behalf of agents.
+    /// Accounts allowed to call `check_policy` / `execute_if_allowed` on behalf of agents.
     pub agents: IterableSet<AccountId>,
 
-    /// day_index (ns / nanos-per-day) -> total spent that day.
+    /// `day_index` (ns / nanos-per-day) -> total spent that day.
     pub daily_spent: LookupMap<u64, u128>,
 
     pub requests: IterableMap<u64, PendingRequest>,
@@ -104,17 +105,19 @@ fn current_minute_of_day() -> MinuteOfDay {
 #[near]
 impl PolicyEngine {
     #[init]
+    #[must_use]
+    #[allow(clippy::use_self)] // false positive: fires on the #[near] macro's own expansion
     pub fn new(
         owner: AccountId,
-        daily_limit: u128,
-        per_tx_limit: u128,
-        auto_approve_below: u128,
+        daily_limit: U128,
+        per_tx_limit: U128,
+        auto_approve_below: U128,
     ) -> Self {
         Self {
             owner,
-            daily_limit,
-            per_tx_limit,
-            auto_approve_below,
+            daily_limit: daily_limit.0,
+            per_tx_limit: per_tx_limit.0,
+            auto_approve_below: auto_approve_below.0,
             window_start_min: None,
             window_end_min: None,
             whitelist: IterableSet::new(b"w"),
@@ -136,18 +139,18 @@ impl PolicyEngine {
             .copied()
             .unwrap_or(0);
         PolicyView {
-            daily_limit: self.daily_limit,
-            per_tx_limit: self.per_tx_limit,
-            auto_approve_below: self.auto_approve_below,
+            daily_limit: U128(self.daily_limit),
+            per_tx_limit: U128(self.per_tx_limit),
+            auto_approve_below: U128(self.auto_approve_below),
             window_start_min: self.window_start_min,
             window_end_min: self.window_end_min,
             paused: self.paused,
-            daily_spent_today: spent,
+            daily_spent_today: U128(spent),
         }
     }
 
-    pub fn is_agent(&self, account: AccountId) -> bool {
-        self.agents.contains(&account)
+    pub fn is_agent(&self, account: &AccountId) -> bool {
+        self.agents.contains(account)
     }
 
     pub fn get_request(&self, id: u64) -> Option<PendingRequest> {
@@ -163,25 +166,26 @@ impl PolicyEngine {
     }
 
     /// Dry-run policy evaluation. Does not create a pending request or mutate state.
-    pub fn check_policy(&self, agent: AccountId, counterparty: AccountId, amount: u128) -> Decision {
-        self.evaluate(&agent, &counterparty, amount)
+    pub fn check_policy(&self, agent: &AccountId, counterparty: &AccountId, amount: U128) -> Decision {
+        self.evaluate(agent, counterparty, amount.0)
     }
 
     // ---------- mutating ----------
 
     /// Called by an agent before settling a payment. Returns Allowed (caller may proceed
-    /// with NEAR Intents settlement), Blocked (must not proceed), or NeedsApproval
-    /// (must wait for the owner to call approve_request/reject_request).
+    /// with NEAR Intents settlement), Blocked (must not proceed), or `NeedsApproval`
+    /// (must wait for the owner to call `approve_request/reject_request`).
     pub fn execute_if_allowed(
         &mut self,
-        counterparty: AccountId,
-        amount: u128,
+        counterparty: &AccountId,
+        amount: U128,
         reason: String,
     ) -> Decision {
         let agent = env::predecessor_account_id();
         require!(self.agents.contains(&agent), "Caller is not a registered agent");
+        let amount = amount.0;
 
-        let decision = self.evaluate(&agent, &counterparty, amount);
+        let decision = self.evaluate(&agent, counterparty, amount);
 
         match &decision {
             Decision::Allowed => {
@@ -204,10 +208,10 @@ impl PolicyEngine {
                         id,
                         agent: agent.clone(),
                         counterparty: counterparty.clone(),
-                        amount,
+                        amount: U128(amount),
                         reason,
                         status: ApprovalStatus::Pending,
-                        created_at_ns: env::block_timestamp(),
+                        created_at_ns: U64(env::block_timestamp()),
                         decided_by: None,
                         decided_at_ns: None,
                     },
@@ -222,6 +226,9 @@ impl PolicyEngine {
         decision
     }
 
+    /// # Panics
+    /// Panics if `id` does not refer to an existing request, or if that
+    /// request has already been approved or rejected.
     pub fn approve_request(&mut self, id: u64) -> Decision {
         self.assert_owner();
         let mut req = self.requests.get(&id).cloned().expect("Request not found");
@@ -229,16 +236,19 @@ impl PolicyEngine {
 
         req.status = ApprovalStatus::Approved;
         req.decided_by = Some(env::predecessor_account_id());
-        req.decided_at_ns = Some(env::block_timestamp());
+        req.decided_at_ns = Some(U64(env::block_timestamp()));
         self.requests.insert(id, req.clone());
 
-        self.record_spend(req.amount);
+        self.record_spend(req.amount.0);
         env::log_str(&format!(
             "EVENT_JSON:{{\"type\":\"approval_decision\",\"decision\":\"approved\",\"request_id\":{id}}}"
         ));
         Decision::Allowed
     }
 
+    /// # Panics
+    /// Panics if `id` does not refer to an existing request, or if that
+    /// request has already been approved or rejected.
     pub fn reject_request(&mut self, id: u64) -> Decision {
         self.assert_owner();
         let mut req = self.requests.get(&id).cloned().expect("Request not found");
@@ -246,7 +256,7 @@ impl PolicyEngine {
 
         req.status = ApprovalStatus::Rejected;
         req.decided_by = Some(env::predecessor_account_id());
-        req.decided_at_ns = Some(env::block_timestamp());
+        req.decided_at_ns = Some(U64(env::block_timestamp()));
         self.requests.insert(id, req);
 
         env::log_str(&format!(
@@ -255,30 +265,40 @@ impl PolicyEngine {
         Decision::Blocked { reason: "Rejected by owner".to_string() }
     }
 
+    /// Updates whichever limits are provided; omitted fields are left unchanged.
+    /// To change the time window, set both `window_start_min` and `window_end_min`.
+    /// To remove the time window entirely, call `clear_time_window` instead.
     pub fn update_policy(
         &mut self,
-        daily_limit: Option<u128>,
-        per_tx_limit: Option<u128>,
-        auto_approve_below: Option<u128>,
-        window_start_min: Option<Option<MinuteOfDay>>,
-        window_end_min: Option<Option<MinuteOfDay>>,
+        daily_limit: Option<U128>,
+        per_tx_limit: Option<U128>,
+        auto_approve_below: Option<U128>,
+        window_start_min: Option<MinuteOfDay>,
+        window_end_min: Option<MinuteOfDay>,
     ) {
         self.assert_owner();
         if let Some(v) = daily_limit {
-            self.daily_limit = v;
+            self.daily_limit = v.0;
         }
         if let Some(v) = per_tx_limit {
-            self.per_tx_limit = v;
+            self.per_tx_limit = v.0;
         }
         if let Some(v) = auto_approve_below {
-            self.auto_approve_below = v;
+            self.auto_approve_below = v.0;
         }
-        if let Some(v) = window_start_min {
-            self.window_start_min = v;
+        if window_start_min.is_some() {
+            self.window_start_min = window_start_min;
         }
-        if let Some(v) = window_end_min {
-            self.window_end_min = v;
+        if window_end_min.is_some() {
+            self.window_end_min = window_end_min;
         }
+        env::log_str("EVENT_JSON:{\"type\":\"policy_updated\"}");
+    }
+
+    pub fn clear_time_window(&mut self) {
+        self.assert_owner();
+        self.window_start_min = None;
+        self.window_end_min = None;
         env::log_str("EVENT_JSON:{\"type\":\"policy_updated\"}");
     }
 
@@ -299,9 +319,9 @@ impl PolicyEngine {
         self.whitelist.insert(account);
     }
 
-    pub fn remove_from_whitelist(&mut self, account: AccountId) {
+    pub fn remove_from_whitelist(&mut self, account: &AccountId) {
         self.assert_owner();
-        self.whitelist.remove(&account);
+        self.whitelist.remove(account);
     }
 
     pub fn add_to_blacklist(&mut self, account: AccountId) {
@@ -309,9 +329,9 @@ impl PolicyEngine {
         self.blacklist.insert(account);
     }
 
-    pub fn remove_from_blacklist(&mut self, account: AccountId) {
+    pub fn remove_from_blacklist(&mut self, account: &AccountId) {
         self.assert_owner();
-        self.blacklist.remove(&account);
+        self.blacklist.remove(account);
     }
 
     pub fn register_agent(&mut self, account: AccountId) {
@@ -319,9 +339,9 @@ impl PolicyEngine {
         self.agents.insert(account);
     }
 
-    pub fn revoke_agent(&mut self, account: AccountId) {
+    pub fn revoke_agent(&mut self, account: &AccountId) {
         self.assert_owner();
-        self.agents.remove(&account);
+        self.agents.remove(account);
     }
 
     // ---------- internal ----------
@@ -401,7 +421,7 @@ mod tests {
 
     fn setup() -> PolicyEngine {
         set_caller(owner());
-        let mut contract = PolicyEngine::new(owner(), 1000, 300, 50);
+        let mut contract = PolicyEngine::new(owner(), U128(1000), U128(300), U128(50));
         contract.register_agent(agent());
         contract
     }
@@ -410,7 +430,7 @@ mod tests {
     fn allows_small_payment_below_auto_approve() {
         let mut contract = setup();
         set_caller(agent());
-        let decision = contract.execute_if_allowed(vendor(), 20, "small invoice".to_string());
+        let decision = contract.execute_if_allowed(&vendor(), U128(20), "small invoice".to_string());
         assert_eq!(decision, Decision::Allowed);
     }
 
@@ -418,7 +438,7 @@ mod tests {
     fn needs_approval_above_per_tx_limit() {
         let mut contract = setup();
         set_caller(agent());
-        let decision = contract.execute_if_allowed(vendor(), 500, "big purchase".to_string());
+        let decision = contract.execute_if_allowed(&vendor(), U128(500), "big purchase".to_string());
         assert!(matches!(decision, Decision::NeedsApproval { .. }));
     }
 
@@ -428,7 +448,7 @@ mod tests {
         set_caller(owner());
         contract.add_to_blacklist(vendor());
         set_caller(agent());
-        let decision = contract.execute_if_allowed(vendor(), 10, "blocked vendor".to_string());
+        let decision = contract.execute_if_allowed(&vendor(), U128(10), "blocked vendor".to_string());
         assert!(matches!(decision, Decision::Blocked { .. }));
     }
 
@@ -438,7 +458,7 @@ mod tests {
         set_caller(owner());
         contract.pause();
         set_caller(agent());
-        let decision = contract.execute_if_allowed(vendor(), 10, "while paused".to_string());
+        let decision = contract.execute_if_allowed(&vendor(), U128(10), "while paused".to_string());
         assert!(matches!(decision, Decision::Blocked { .. }));
     }
 
@@ -447,7 +467,7 @@ mod tests {
         let mut contract = setup();
         set_caller("stranger.testnet".parse().unwrap());
         let decision = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.execute_if_allowed(vendor(), 10, "not registered".to_string())
+            contract.execute_if_allowed(&vendor(), U128(10), "not registered".to_string())
         }));
         assert!(decision.is_err());
     }
@@ -456,7 +476,7 @@ mod tests {
     fn approve_request_resolves_pending_and_records_spend() {
         let mut contract = setup();
         set_caller(agent());
-        let decision = contract.execute_if_allowed(vendor(), 500, "needs approval".to_string());
+        let decision = contract.execute_if_allowed(&vendor(), U128(500), "needs approval".to_string());
         let id = match decision {
             Decision::NeedsApproval { request_id } => request_id,
             other => panic!("expected NeedsApproval, got {other:?}"),
@@ -467,14 +487,14 @@ mod tests {
         assert_eq!(resolved, Decision::Allowed);
 
         let policy = contract.get_policy();
-        assert_eq!(policy.daily_spent_today, 500);
+        assert_eq!(policy.daily_spent_today, U128(500));
     }
 
     #[test]
     fn reject_request_does_not_record_spend() {
         let mut contract = setup();
         set_caller(agent());
-        let decision = contract.execute_if_allowed(vendor(), 500, "needs approval".to_string());
+        let decision = contract.execute_if_allowed(&vendor(), U128(500), "needs approval".to_string());
         let id = match decision {
             Decision::NeedsApproval { request_id } => request_id,
             other => panic!("expected NeedsApproval, got {other:?}"),
@@ -484,7 +504,7 @@ mod tests {
         contract.reject_request(id);
 
         let policy = contract.get_policy();
-        assert_eq!(policy.daily_spent_today, 0);
+        assert_eq!(policy.daily_spent_today, U128(0));
     }
 
     #[test]
@@ -493,10 +513,10 @@ mod tests {
         set_caller(agent());
         // 4 x 250 = 1000, within the 300 per-tx limit each time.
         for _ in 0..4 {
-            let decision = contract.execute_if_allowed(vendor(), 250, "recurring".to_string());
+            let decision = contract.execute_if_allowed(&vendor(), U128(250), "recurring".to_string());
             assert_eq!(decision, Decision::Allowed);
         }
-        let decision = contract.execute_if_allowed(vendor(), 250, "over daily limit".to_string());
+        let decision = contract.execute_if_allowed(&vendor(), U128(250), "over daily limit".to_string());
         assert!(matches!(decision, Decision::NeedsApproval { .. }));
     }
 }

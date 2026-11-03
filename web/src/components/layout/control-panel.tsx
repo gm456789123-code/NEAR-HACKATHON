@@ -17,18 +17,24 @@ export function ControlPanel() {
       fetch("/api/policy"),
       fetch("/api/approvals"),
     ]);
-    if (policyRes.ok) setPolicy(await policyRes.json());
-    if (approvalsRes.ok) setRequests(await approvalsRes.json());
+    if (policyRes.ok) {
+      const data: PolicyView = await policyRes.json();
+      setPolicy(data);
+    }
+    if (approvalsRes.ok) {
+      const data: PendingRequest[] = await approvalsRes.json();
+      setRequests(data);
+    }
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function decide(id: number, action: "approve" | "reject") {
     setPendingAction(id);
     try {
-      await fetch(`/api/approvals/${id}`, {
+      await fetch(`/api/approvals/${id.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
@@ -110,7 +116,9 @@ export function ControlPanel() {
                     size="sm"
                     className="flex-1 bg-success text-background hover:bg-success/90"
                     disabled={pendingAction === r.id}
-                    onClick={() => decide(r.id, "approve")}
+                    onClick={() => {
+                      void decide(r.id, "approve");
+                    }}
                   >
                     Approve
                   </Button>
@@ -119,7 +127,9 @@ export function ControlPanel() {
                     variant="destructive"
                     className="flex-1"
                     disabled={pendingAction === r.id}
-                    onClick={() => decide(r.id, "reject")}
+                    onClick={() => {
+                      void decide(r.id, "reject");
+                    }}
                   >
                     Reject
                   </Button>
