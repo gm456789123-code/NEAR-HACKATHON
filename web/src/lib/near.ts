@@ -1,4 +1,4 @@
-import { connect, keyStores, KeyPair, Near } from "near-api-js";
+import { connect, keyStores, KeyPair, Near, utils } from "near-api-js";
 import type { Account } from "near-api-js";
 
 const NETWORK_ID = process.env.NEAR_NETWORK_ID ?? "testnet";
@@ -103,6 +103,45 @@ async function callContract<T>(
   ) as T;
 }
 
+export interface TransferResult {
+  success: boolean;
+  txHash?: string;
+  explorerUrl?: string;
+  error?: string;
+}
+
+/**
+ * Settlement: sends real testnet NEAR to the counterparty. Separate from the
+ * Policy Engine's "Allowed" decision — authorization and settlement are two
+ * different things, and settlement can still fail (e.g. the counterparty
+ * account doesn't exist on-chain) even after a payment was authorized.
+ */
+export async function sendNear(
+  receiverId: string,
+  amountNear: string
+): Promise<TransferResult> {
+  const amountYocto = utils.format.parseNearAmount(amountNear);
+  if (!amountYocto) {
+    return { success: false, error: `Invalid NEAR amount: ${amountNear}` };
+  }
+
+  try {
+    const account = await getOwnerAccount();
+    const outcome = await account.sendMoney(receiverId, BigInt(amountYocto));
+    const txHash: string = outcome.transaction.hash;
+    return {
+      success: true,
+      txHash,
+      explorerUrl: `https://testnet.nearblocks.io/txns/${txHash}`,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Transfer failed",
+    };
+  }
+}
+
 export interface UpdatePolicyArgs {
   daily_limit?: string;
   per_tx_limit?: string;
@@ -115,6 +154,18 @@ export const policyEngine = {
     viewContract<PendingRequest[]>("list_pending_requests"),
   isAgent: (account: string) =>
     viewContract<boolean>("is_agent", { account }),
+  checkPolicy: (agent: string, counterparty: string, amount: string) =>
+    viewContract<ContractDecision>("check_policy", {
+      agent,
+      counterparty,
+      amount,
+    }),
+  executeIfAllowed: (counterparty: string, amount: string, reason: string) =>
+    callContract<ContractDecision>("execute_if_allowed", {
+      counterparty,
+      amount,
+      reason,
+    }),
   approveRequest: (id: number) =>
     callContract<ContractDecision>("approve_request", { id }),
   rejectRequest: (id: number) =>
@@ -123,4 +174,5 @@ export const policyEngine = {
     await callContract("update_policy", args);
   },
   contractId: CONTRACT_ID,
+  agentAccountId: OWNER_ACCOUNT_ID,
 };
