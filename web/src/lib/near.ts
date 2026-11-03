@@ -41,7 +41,7 @@ async function getOwnerAccount(): Promise<Account> {
   return ownerAccount;
 }
 
-export type PolicyView = {
+export interface PolicyView {
   daily_limit: string;
   per_tx_limit: string;
   auto_approve_below: string;
@@ -49,11 +49,11 @@ export type PolicyView = {
   window_end_min: number | null;
   paused: boolean;
   daily_spent_today: string;
-};
+}
 
 export type ApprovalStatus = "Pending" | "Approved" | "Rejected";
 
-export type PendingRequest = {
+export interface PendingRequest {
   id: number;
   agent: string;
   counterparty: string;
@@ -63,7 +63,12 @@ export type PendingRequest = {
   created_at_ns: string;
   decided_by: string | null;
   decided_at_ns: string | null;
-};
+}
+
+export type ContractDecision =
+  | "Allowed"
+  | { Blocked: { reason: string } }
+  | { NeedsApproval: { request_id: number } };
 
 async function viewContract<T>(method: string, args: object = {}): Promise<T> {
   if (!CONTRACT_ID) {
@@ -98,18 +103,24 @@ async function callContract<T>(
   ) as T;
 }
 
+export interface UpdatePolicyArgs {
+  daily_limit?: string;
+  per_tx_limit?: string;
+  auto_approve_below?: string;
+}
+
 export const policyEngine = {
   getPolicy: () => viewContract<PolicyView>("get_policy"),
   listPendingRequests: () =>
     viewContract<PendingRequest[]>("list_pending_requests"),
   isAgent: (account: string) =>
     viewContract<boolean>("is_agent", { account }),
-  approveRequest: (id: number) => callContract("approve_request", { id }),
-  rejectRequest: (id: number) => callContract("reject_request", { id }),
-  updatePolicy: (args: {
-    daily_limit?: number;
-    per_tx_limit?: number;
-    auto_approve_below?: number;
-  }) => callContract<void>("update_policy", args),
+  approveRequest: (id: number) =>
+    callContract<ContractDecision>("approve_request", { id }),
+  rejectRequest: (id: number) =>
+    callContract<ContractDecision>("reject_request", { id }),
+  async updatePolicy(args: UpdatePolicyArgs): Promise<void> {
+    await callContract("update_policy", args);
+  },
   contractId: CONTRACT_ID,
 };

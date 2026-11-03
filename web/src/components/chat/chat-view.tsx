@@ -8,11 +8,11 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
-type Message = {
+interface Message {
   id: string;
   role: "user" | "agent";
   text: string;
-};
+}
 
 const QUICK_ACTIONS = [
   "Check policy",
@@ -94,7 +94,9 @@ export function ChatView() {
           {QUICK_ACTIONS.map((action) => (
             <button
               key={action}
-              onClick={() => send(action)}
+              onClick={() => {
+                send(action);
+              }}
               className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             >
               {action}
@@ -110,7 +112,9 @@ export function ChatView() {
         >
           <Input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+            }}
             placeholder="Ask the treasury agent..."
             className="flex-1"
           />

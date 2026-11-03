@@ -24,13 +24,15 @@ export default function PolicyPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/policy");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load policy");
+      const data: PolicyView | { error: string } = await res.json();
+      if ("error" in data) {
+        throw new Error(data.error);
+      }
       setPolicy(data);
       setForm({
-        daily_limit: String(data.daily_limit),
-        per_tx_limit: String(data.per_tx_limit),
-        auto_approve_below: String(data.auto_approve_below),
+        daily_limit: data.daily_limit,
+        per_tx_limit: data.per_tx_limit,
+        auto_approve_below: data.auto_approve_below,
       });
       setError(null);
     } catch (err) {
@@ -41,7 +43,7 @@ export default function PolicyPage() {
   }
 
   useEffect(() => {
-    load();
+    void load();
   }, []);
 
   async function save() {
@@ -57,8 +59,10 @@ export default function PolicyPage() {
           auto_approve_below: Number(form.auto_approve_below),
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save policy");
+      const data: PolicyView | { error: string } = await res.json();
+      if ("error" in data) {
+        throw new Error(data.error);
+      }
       setPolicy(data);
       setSaved(true);
       setError(null);
@@ -124,9 +128,9 @@ export default function PolicyPage() {
                 id="daily"
                 type="number"
                 value={form.daily_limit}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, daily_limit: e.target.value }))
-                }
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, daily_limit: e.target.value }));
+                }}
               />
             </div>
             <div className="space-y-1.5">
@@ -135,9 +139,9 @@ export default function PolicyPage() {
                 id="pertx"
                 type="number"
                 value={form.per_tx_limit}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, per_tx_limit: e.target.value }))
-                }
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, per_tx_limit: e.target.value }));
+                }}
               />
             </div>
             <div className="space-y-1.5">
@@ -146,12 +150,18 @@ export default function PolicyPage() {
                 id="auto"
                 type="number"
                 value={form.auto_approve_below}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, auto_approve_below: e.target.value }))
-                }
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, auto_approve_below: e.target.value }));
+                }}
               />
             </div>
-            <Button className="w-full" disabled={saving} onClick={save}>
+            <Button
+              className="w-full"
+              disabled={saving}
+              onClick={() => {
+                void save();
+              }}
+            >
               {saving ? "Saving…" : "Save Policy"}
             </Button>
             {saved && (

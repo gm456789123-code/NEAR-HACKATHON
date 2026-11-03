@@ -12,8 +12,10 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request id" }, { status: 400 });
   }
 
-  const body = await req.json().catch(() => ({}));
-  const action = body?.action === "reject" ? "reject" : "approve";
+  const body: { action?: unknown } = await req
+    .json()
+    .catch((): { action?: unknown } => ({}));
+  const action = body.action === "reject" ? "reject" : "approve";
 
   try {
     const decision =
@@ -26,7 +28,7 @@ export async function POST(
         actorType: "HUMAN",
         actorId: policyEngine.contractId,
         action: action === "approve" ? "approve_request" : "reject_request",
-        resource: `request:${requestId}`,
+        resource: `request:${requestId.toString()}`,
         status: action === "approve" ? "ALLOWED" : "BLOCKED",
         detail: JSON.stringify(decision),
       },

@@ -8,14 +8,19 @@
 
 ```json
 {
-  "daily_limit": 5000000000,
-  "per_tx_limit": 1000000000,
-  "auto_approve_below": 50000000
+  "daily_limit": "5000000000",
+  "per_tx_limit": "1000000000",
+  "auto_approve_below": "50000000"
 }
 ```
 
 Units are an abstract integer (e.g. micro-USD); the backend decides the real-world
 denomination when it calls the contract.
+
+All `u128`/`u64` amounts and timestamps cross the JSON boundary as decimal
+strings (`near_sdk::json_types::U128`/`U64`), per NEAR convention, to avoid
+precision loss in JS/TS clients (`amount`, `daily_limit`, `per_tx_limit`,
+`auto_approve_below`, `daily_spent_today`, `created_at_ns`, `decided_at_ns`).
 
 ## Verified on testnet
 

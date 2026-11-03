@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { policyEngine } from "@/lib/near";
+import { policyEngine, type UpdatePolicyArgs } from "@/lib/near";
+
+interface PolicyPatchBody {
+  daily_limit?: unknown;
+  per_tx_limit?: unknown;
+  auto_approve_below?: unknown;
+}
 
 export async function GET() {
   try {
@@ -13,12 +19,22 @@ export async function GET() {
   }
 }
 
+const POLICY_FIELDS = [
+  "daily_limit",
+  "per_tx_limit",
+  "auto_approve_below",
+] as const satisfies readonly (keyof PolicyPatchBody)[];
+
 export async function PATCH(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
-  const update: Record<string, number> = {};
-  for (const key of ["daily_limit", "per_tx_limit", "auto_approve_below"]) {
-    if (typeof body[key] === "number" && Number.isFinite(body[key])) {
-      update[key] = body[key];
+  const body: PolicyPatchBody = await req
+    .json()
+    .catch((): PolicyPatchBody => ({}));
+
+  const update: UpdatePolicyArgs = {};
+  for (const key of POLICY_FIELDS) {
+    const value = body[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      update[key] = String(Math.trunc(value));
     }
   }
 

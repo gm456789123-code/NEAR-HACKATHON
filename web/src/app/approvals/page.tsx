@@ -16,8 +16,10 @@ export default function ApprovalsPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/approvals");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load approvals");
+      const data: PendingRequest[] | { error: string } = await res.json();
+      if ("error" in data) {
+        throw new Error(data.error);
+      }
       setRequests(data);
       setError(null);
     } catch (err) {
@@ -28,18 +30,18 @@ export default function ApprovalsPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function decide(id: number, action: "approve" | "reject") {
     setPendingAction(id);
     try {
-      const res = await fetch(`/api/approvals/${id}`, {
+      const res = await fetch(`/api/approvals/${id.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      const data = await res.json();
+      const data: { error?: string } = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit decision");
       await load();
     } catch (err) {
@@ -89,14 +91,18 @@ export default function ApprovalsPage() {
                   <Button
                     className="bg-success text-background hover:bg-success/90"
                     disabled={pendingAction === r.id}
-                    onClick={() => decide(r.id, "approve")}
+                    onClick={() => {
+                      void decide(r.id, "approve");
+                    }}
                   >
                     Approve
                   </Button>
                   <Button
                     variant="destructive"
                     disabled={pendingAction === r.id}
-                    onClick={() => decide(r.id, "reject")}
+                    onClick={() => {
+                      void decide(r.id, "reject");
+                    }}
                   >
                     Reject
                   </Button>
