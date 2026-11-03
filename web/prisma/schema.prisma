@@ -84,8 +84,8 @@ model Approval {
 
 model Transaction {
   id          String            @id @default(cuid())
-  policyId    String
-  policy      Policy            @relation(fields: [policyId], references: [id])
+  policyId    String?
+  policy      Policy?           @relation(fields: [policyId], references: [id])
   agentId     String?
   agent       Agent?            @relation(fields: [agentId], references: [id])
   approvalId  String?           @unique

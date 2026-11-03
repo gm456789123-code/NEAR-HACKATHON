@@ -1,85 +1,62 @@
 # AGENT.md — Autonomous Treasury Mesh (NEAR Hackathon)
 
 ## Project Goal
-Build a production-quality **Autonomous Treasury Mesh** for the NEAR HACKATHON (deadline: 14 Nov 2026 23:59 UTC).
+Build a production-quality **Autonomous Treasury Mesh** for the **NEAR HACKATHON 2026** (deadline: **14 Nov 2026 23:59 UTC**).
 
-Core idea: Multi-agent system that can autonomously manage and execute payments (APIs, suppliers, compute) under hard human-defined policies. Policy enforcement must happen **outside** the LLM (on-chain / TEE).
+Core idea: Multi-agent system that can autonomously manage and execute payments (APIs, suppliers, compute) under hard human-defined policies. Policy enforcement must happen **outside** the LLM (on-chain NEAR Smart Contract / TEE).
 
-Target tracks: Autonomous Business, Agent Economy, AI Security & Defense, Privacy & Private AI.
+**Target Tracks (Multi-track entry allowed):**
+1. **Autonomous Business** — Autonomous financial management for digital businesses.
+2. **Agent Economy** — Secure micro-payments and multi-agent coordination.
+3. **AI Security & Defense** — Zero-trust agent architecture where LLM never holds keys.
+4. **Privacy & Private AI** — Compatibility with NEAR AI Cloud (Confidential GPU TEE).
 
-## Architecture Principles
-- Policy Engine is the single source of truth (NEAR smart contract).
-- LLM/Agents never hold private keys or unrestricted spending power.
-- Settlement via **NEAR Intents + Chain Signatures**.
-- Agents call external LLM APIs (OpenAI / Anthropic / Groq / NEAR AI Cloud). Do **not** self-host large models.
-- Full audit trail of every decision and transaction.
-- Working prototype + clear README that AI judges (Claude Code + Codex) can verify.
+---
+
+## Judging & Screening Architecture
+- **AI Screening Defense (Claude Code & Codex)**:
+  - Repository must run out of the box with zero required external API keys (includes Smart Heuristic Fallback in `lib/llm.ts`).
+  - Clear, deterministic "Do X → See Y" test flow in root `README.md`.
+- **Policy Engine is Single Source of Truth**:
+  - Implemented in Rust on NEAR (`contracts/policy-engine/src/lib.rs`).
+  - Deployed on NEAR Testnet: `treasury-mesh-hack3rwin.testnet`.
+- **Settlement Layer**:
+  - Live NEAR Testnet transfers / NEAR Intents recording real transaction hashes.
+- **Auditability**:
+  - Full audit trail of every agent prompt, intent extraction, policy check, and settlement recorded in SQLite + on-chain events.
+
+---
 
 ## Tech Stack
-- **Frontend (GUI Dashboard)**: Next.js (App Router) + Tailwind + shadcn/ui
-- **Backend**: Python (FastAPI) or TypeScript (Next.js API routes / separate service)
-- **Blockchain**: NEAR Protocol (near-api-js / near-sdk-py)
-- **Agents**: OpenAI SDK / Anthropic SDK / LangGraph (or simple custom orchestrator)
-- **Settlement**: NEAR Intents
-- **Hosting (for demo)**: Render / Railway / Vercel (free tier acceptable)
-- **Optional**: Google Colab A100 only for experimentation, not required in final demo
+- **Frontend (GUI Dashboard)**: Next.js 16 (App Router) + Tailwind CSS + shadcn/ui (Dark Fintech theme)
+- **Backend**: Next.js Server Actions & API Routes + Prisma ORM (SQLite `dev.db`)
+- **Blockchain**: NEAR Protocol (`near-api-js` + Rust `near-sdk 5.6`)
+- **Agents**: Orchestrator + Compliance Agent + Payment Agent
+- **LLM Support**:
+  - Primary: Anthropic Claude 3.5 Haiku (`claude-3-5-haiku-20241022`)
+  - Ecosystem Native: NEAR AI Cloud API (`api.near.ai`)
+  - Offline / Zero-Key Fallback: Heuristic Parser for frictionless judging
+- **Settlement**: NEAR Protocol Testnet Transfers / NEAR Intents
 
-## Core Modules to Build (Priority Order)
+---
 
-### 1. Policy Engine (NEAR Smart Contract) — Highest Priority
-- Spending limits (per tx, per day, per agent)
-- Whitelist / blacklist of counterparties
-- Time windows
-- Human override / multi-sig style approval for high-value actions
-- Functions: `check_policy`, `execute_if_allowed`, `update_policy`, `pause`
+## Milestones & Action Plan
 
-### 2. Agent Orchestrator
-- Receives high-level goals
-- Breaks down into tasks
-- Delegates to specialist agents
-- Must call Policy Engine before any payment
+### Phase 1: LLM Reliability & Zero-Key Fallback (Highest Priority)
+- Fix model name in `web/src/lib/llm.ts` to `claude-3-5-haiku-20241022`.
+- Add Heuristic/Regex intent parser fallback so chat functions without `ANTHROPIC_API_KEY`.
+- Support optional NEAR AI Cloud endpoint.
 
-### 3. Specialist Agents (minimum 2)
-- Payment Agent
-- Compliance / Policy Checker Agent
-- (Optional) Procurement or Research Agent
+### Phase 2: Live Settlement & Tx Hash
+- Connect live NEAR Testnet transfer execution in `Payment Agent` when contract returns `Allowed` or is human-approved.
+- Record txHash into `Transaction` and link to NEAR Explorer in UI and audit trail.
 
-### 4. Settlement Layer
-- Integrate NEAR Intents for cross-chain / intent-based payments
-- Never let agent sign directly
+### Phase 3: Judge-Ready Documentation
+- Create root `README.md` with:
+  - Architecture diagram
+  - Live Testnet contract details
+  - Verifiable "Do X → See Y" demo commands
+  - Explanation of track coverage.
 
-### 5. GUI Dashboard (Web)
-Must include:
-- Policy configuration UI
-- Real-time agent status
-- Pending approvals + approve/reject buttons
-- Transaction history + audit log viewer
-- Clear “human in the loop” controls
-
-### 6. Audit & Logging
-- Every agent decision and payment attempt logged (on-chain event + off-chain structured log)
-
-## Minimum Viable Demo Requirements
-1. User sets a policy in the dashboard
-2. Agent receives a task (e.g. “pay this API invoice”)
-3. Policy Engine checks and either allows or blocks
-4. If allowed → executes via NEAR Intents
-5. Full audit log visible in UI
-6. README with exact “Do X → See Y” steps for judges
-
-## Development Rules
-- Start with Policy Engine + simple agent + basic dashboard
-- Prefer API-based LLMs over local models
-- Write clear README early
-- Make everything runnable with minimal setup (Docker optional but nice)
-- Focus on reliability and clarity over feature count
-- Security and policy controls are features, not afterthoughts
-
-## Immediate First Tasks
-1. Scaffold Next.js dashboard + FastAPI (or Next.js full-stack) backend
-2. Create basic NEAR Policy Engine contract skeleton
-3. Implement simple orchestrator that calls an LLM API and then checks policy
-4. Connect one real NEAR Intents flow (testnet is fine)
-5. Build the core dashboard pages (Policy, Approvals, Audit Log)
-
-Start building now. Prioritize a working end-to-end flow over completeness.
+### Phase 4: Submission Kit
+- Prepare public X (Twitter) announcement template with demo video script.
