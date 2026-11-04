@@ -1,5 +1,6 @@
 import { connect, keyStores, KeyPair, Near, utils } from "near-api-js";
 import type { Account } from "near-api-js";
+import { withTimeout } from "@/lib/near-timeout";
 
 // Defaults point at our already-deployed, public testnet contract so the
 // dashboard is readable with zero setup. None of these are secrets — a NEAR
@@ -14,6 +15,11 @@ const CONTRACT_ID =
 const OWNER_ACCOUNT_ID =
   process.env.NEAR_OWNER_ACCOUNT_ID ?? "treasury-mesh-hack3rwin.testnet";
 const OWNER_PRIVATE_KEY = process.env.NEAR_OWNER_PRIVATE_KEY ?? "";
+const configuredRpcTimeout = Number(process.env.NEAR_RPC_TIMEOUT_MS ?? "8000");
+const RPC_TIMEOUT_MS =
+  Number.isSafeInteger(configuredRpcTimeout) && configuredRpcTimeout > 0
+    ? configuredRpcTimeout
+    : 8000;
 
 let nearConnection: Near | null = null;
 let ownerAccount: Account | null = null;
@@ -94,25 +100,37 @@ export type ContractDecision =
   | { NeedsApproval: { request_id: number } };
 
 async function viewContract<T>(method: string, args: object = {}): Promise<T> {
-  const account = await getViewAccount();
-  return account.viewFunction({
-    contractId: CONTRACT_ID,
-    methodName: method,
-    args,
-  }) as Promise<T>;
+  return withTimeout(
+    (async () => {
+      const account = await getViewAccount();
+      return account.viewFunction({
+        contractId: CONTRACT_ID,
+        methodName: method,
+        args,
+      }) as Promise<T>;
+    })(),
+    RPC_TIMEOUT_MS,
+    method
+  );
 }
 
 async function callContract<T>(
   method: string,
   args: object = {}
 ): Promise<T> {
-  const account = await getOwnerAccount();
-  const result = await account.functionCall({
-    contractId: CONTRACT_ID,
-    methodName: method,
-    args,
-    gas: BigInt("30000000000000"),
-  });
+  const result = await withTimeout(
+    (async () => {
+      const account = await getOwnerAccount();
+      return account.functionCall({
+        contractId: CONTRACT_ID,
+        methodName: method,
+        args,
+        gas: BigInt("30000000000000"),
+      });
+    })(),
+    RPC_TIMEOUT_MS,
+    method
+  );
   const status = result.status as { SuccessValue?: string };
   if (!status.SuccessValue) return undefined as T;
   return JSON.parse(
@@ -143,8 +161,14 @@ export async function sendNear(
   }
 
   try {
-    const account = await getOwnerAccount();
-    const outcome = await account.sendMoney(receiverId, BigInt(amountYocto));
+    const outcome = await withTimeout(
+      (async () => {
+        const account = await getOwnerAccount();
+        return account.sendMoney(receiverId, BigInt(amountYocto));
+      })(),
+      RPC_TIMEOUT_MS,
+      "send_money"
+    );
     const txHash: string = outcome.transaction.hash;
     return {
       success: true,

@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "verify": "node ../scripts/verify.mjs",
-    "test": "node ../scripts/verify.mjs"
+    "test": "node --test --test-isolation=none test/*.test.cjs",
+    "verify": "node ../scripts/verify.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",

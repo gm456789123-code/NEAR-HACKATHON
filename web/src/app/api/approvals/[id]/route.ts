@@ -1,26 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
 import { policyEngine, sendNear } from "@/lib/near";
 import { prisma } from "@/lib/prisma";
+import {
+  PendingRequestNotFoundError,
+  resolveApproval,
+} from "@/lib/approval-workflow";
+import { NearRpcTimeoutError } from "@/lib/near-timeout";
+import { AdminAuthError, assertAdminRequest } from "@/lib/admin-auth";
+
+async function auditFailedResolution(
+  requestId: number,
+  action: "approve" | "reject",
+  detail: string
+) {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        actorType: "HUMAN",
+        actorId: policyEngine.contractId,
+        action: action === "approve" ? "approve_request" : "reject_request",
+        resource: `request:${requestId.toString()}`,
+        status: "FAILED",
+        detail,
+      },
+    });
+  } catch (auditError) {
+    console.error("Failed to write approval audit log", auditError);
+  }
+}
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
+    assertAdminRequest(req);
+  } catch (err) {
+    if (err instanceof AdminAuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
+  }
+
   const { id } = await params;
   const requestId = Number(id);
-  if (!Number.isInteger(requestId)) {
+  if (!Number.isSafeInteger(requestId) || requestId < 0) {
     return NextResponse.json({ error: "Invalid request id" }, { status: 400 });
   }
 
-  const body: { action?: unknown; counterparty?: unknown; amount?: unknown } =
-    await req.json().catch((): { action?: unknown } => ({}));
-  const action = body.action === "reject" ? "reject" : "approve";
+  const body: { action?: unknown } = await req
+    .json()
+    .catch((): { action?: unknown } => ({}));
+  if (body.action !== "approve" && body.action !== "reject") {
+    return NextResponse.json(
+      { error: "Action must be 'approve' or 'reject'" },
+      { status: 400 }
+    );
+  }
+  const action = body.action;
 
   try {
-    const decision =
-      action === "approve"
-        ? await policyEngine.approveRequest(requestId)
-        : await policyEngine.rejectRequest(requestId);
+    const result = await resolveApproval(
+      { requestId, action },
+      {
+        listPendingRequests: policyEngine.listPendingRequests,
+        approveRequest: policyEngine.approveRequest,
+        rejectRequest: policyEngine.rejectRequest,
+        sendNear,
+      }
+    );
 
     await prisma.auditLog.create({
       data: {
@@ -29,30 +77,17 @@ export async function POST(
         action: action === "approve" ? "approve_request" : "reject_request",
         resource: `request:${requestId.toString()}`,
         status: action === "approve" ? "ALLOWED" : "BLOCKED",
-        detail: JSON.stringify(decision),
+        detail: JSON.stringify(result.decision),
       },
     });
 
-    let settlement = null;
-    if (
-      action === "approve" &&
-      typeof body.counterparty === "string" &&
-      (typeof body.amount === "string" || typeof body.amount === "number")
-    ) {
-      const counterparty = body.counterparty;
-      const amountStr =
-        typeof body.amount === "number"
-          ? body.amount.toString()
-          : body.amount;
-      const transfer = await sendNear(counterparty, amountStr);
-      settlement = transfer;
-
+    if (result.settlement) {
       await prisma.transaction.create({
         data: {
-          amount: Number.parseFloat(amountStr) || 0,
-          counterparty,
-          status: transfer.success ? "EXECUTED" : "FAILED",
-          txHash: transfer.txHash ?? null,
+          amount: Number.parseFloat(result.amountNear),
+          counterparty: result.authorizedRequest.counterparty,
+          status: result.settlement.success ? "EXECUTED" : "FAILED",
+          txHash: result.settlement.txHash ?? null,
         },
       });
 
@@ -61,19 +96,34 @@ export async function POST(
           actorType: "SYSTEM",
           actorId: "settlement",
           action: "settle_approved_transfer",
-          resource: `request:${requestId.toString()}:${counterparty}`,
-          status: transfer.success ? "ALLOWED" : "FAILED",
-          detail: transfer.success
-            ? (transfer.explorerUrl ?? "")
-            : (transfer.error ?? ""),
+          resource: `request:${requestId.toString()}:${result.authorizedRequest.counterparty}`,
+          status: result.settlement.success ? "ALLOWED" : "FAILED",
+          detail: result.settlement.success
+            ? (result.settlement.explorerUrl ?? "")
+            : (result.settlement.error ?? ""),
         },
       });
     }
 
-    return NextResponse.json({ decision, settlement });
+    return NextResponse.json({
+      decision: result.decision,
+      settlement: result.settlement,
+    });
   } catch (err) {
+    if (err instanceof PendingRequestNotFoundError) {
+      await auditFailedResolution(requestId, action, "Pending request not found");
+      return NextResponse.json({ error: err.message }, { status: 404 });
+    }
+    if (err instanceof NearRpcTimeoutError) {
+      await auditFailedResolution(requestId, action, "NEAR RPC timeout");
+      return NextResponse.json(
+        { error: "NEAR RPC did not respond before the deadline" },
+        { status: 504 }
+      );
+    }
+    await auditFailedResolution(requestId, action, "Request resolution failed");
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to resolve request" },
+      { error: "Failed to resolve request" },
       { status: 500 }
     );
   }
