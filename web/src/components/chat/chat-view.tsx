@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Bot, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,11 @@ export function ChatView() {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, busy]);
 
   async function send(text: string) {
     if (!text.trim() || busy) return;
@@ -114,8 +119,8 @@ export function ChatView() {
   }
 
   return (
-    <section className="flex flex-1 flex-col min-w-0">
-      <header className="flex items-center justify-between border-b border-border px-6 py-4">
+    <section className="flex flex-1 flex-col min-w-0 min-h-0 h-full overflow-hidden">
+      <header className="shrink-0 flex items-center justify-between border-b border-border px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary">
             <Bot className="h-4.5 w-4.5" />
@@ -134,16 +139,16 @@ export function ChatView() {
         </Badge>
       </header>
 
-      <ScrollArea className="flex-1 px-6 py-4">
-        <div className="flex flex-col gap-3 max-w-2xl">
+      <ScrollArea className="flex-1 min-h-0 px-6 py-4">
+        <div className="flex flex-col gap-3 w-full">
           {messages.map((m) => (
             <div
               key={m.id}
               className={cn(
-                "rounded-lg px-4 py-2.5 text-sm max-w-[85%] whitespace-pre-line",
+                "rounded-lg px-4 py-2.5 text-sm max-w-[80%] whitespace-pre-line break-words",
                 m.role === "user"
-                  ? "self-end bg-primary text-primary-foreground"
-                  : "self-start bg-secondary text-secondary-foreground"
+                  ? "self-end bg-primary text-primary-foreground ml-auto"
+                  : "self-start bg-secondary text-secondary-foreground mr-auto"
               )}
             >
               {m.text}
@@ -154,10 +159,11 @@ export function ChatView() {
               Thinking…
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 
-      <div className="border-t border-border p-4">
+      <div className="shrink-0 border-t border-border p-4 bg-background">
         <div className="flex flex-wrap gap-2 pb-3">
           {QUICK_ACTIONS.map((action) => (
             <button
