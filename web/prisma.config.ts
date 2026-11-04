@@ -5,7 +5,7 @@ import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
 // Defaults to a local SQLite file so the app runs with zero .env setup.
-const databaseUrl = process.env.DATABASE_URL ?? "file:./prisma/dev.db";
+const databaseUrl = process.env.DATABASE_URL ?? "file:./dev.db";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
