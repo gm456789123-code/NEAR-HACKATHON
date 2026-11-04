@@ -33,13 +33,20 @@ export default function ApprovalsPage() {
     void load();
   }, [load]);
 
-  async function decide(id: number, action: "approve" | "reject") {
-    setPendingAction(id);
+  async function decide(
+    r: PendingRequest,
+    action: "approve" | "reject"
+  ) {
+    setPendingAction(r.id);
     try {
-      const res = await fetch(`/api/approvals/${id.toString()}`, {
+      const res = await fetch(`/api/approvals/${r.id.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({
+          action,
+          counterparty: r.counterparty,
+          amount: r.amount,
+        }),
       });
       const data: { error?: string } = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit decision");
@@ -92,7 +99,7 @@ export default function ApprovalsPage() {
                     className="bg-success text-background hover:bg-success/90"
                     disabled={pendingAction === r.id}
                     onClick={() => {
-                      void decide(r.id, "approve");
+                      void decide(r, "approve");
                     }}
                   >
                     Approve
@@ -101,7 +108,7 @@ export default function ApprovalsPage() {
                     variant="destructive"
                     disabled={pendingAction === r.id}
                     onClick={() => {
-                      void decide(r.id, "reject");
+                      void decide(r, "reject");
                     }}
                   >
                     Reject

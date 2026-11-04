@@ -1,15 +1,23 @@
 import { connect, keyStores, KeyPair, Near, utils } from "near-api-js";
 import type { Account } from "near-api-js";
 
+// Defaults point at our already-deployed, public testnet contract so the
+// dashboard is readable with zero setup. None of these are secrets — a NEAR
+// account id and a deployed contract id are public on-chain information.
+// Only NEAR_OWNER_PRIVATE_KEY is a secret, is never defaulted, and is only
+// needed for write calls (approve/reject, agent payments). See README.
 const NETWORK_ID = process.env.NEAR_NETWORK_ID ?? "testnet";
 const NODE_URL =
   process.env.NEAR_NODE_URL ?? "https://rpc.testnet.near.org";
-const CONTRACT_ID = process.env.NEAR_POLICY_CONTRACT_ID ?? "";
-const OWNER_ACCOUNT_ID = process.env.NEAR_OWNER_ACCOUNT_ID ?? "";
+const CONTRACT_ID =
+  process.env.NEAR_POLICY_CONTRACT_ID ?? "treasury-mesh-hack3rwin.testnet";
+const OWNER_ACCOUNT_ID =
+  process.env.NEAR_OWNER_ACCOUNT_ID ?? "treasury-mesh-hack3rwin.testnet";
 const OWNER_PRIVATE_KEY = process.env.NEAR_OWNER_PRIVATE_KEY ?? "";
 
 let nearConnection: Near | null = null;
 let ownerAccount: Account | null = null;
+let viewAccount: Account | null = null;
 
 async function getNear(): Promise<Near> {
   if (nearConnection) return nearConnection;
@@ -31,10 +39,21 @@ async function getNear(): Promise<Near> {
   return nearConnection;
 }
 
+/** Used for view calls, which never sign anything — no key required. */
+async function getViewAccount(): Promise<Account> {
+  if (viewAccount) return viewAccount;
+  const near = await getNear();
+  viewAccount = await near.account(CONTRACT_ID);
+  return viewAccount;
+}
+
+/** Used for write calls — requires NEAR_OWNER_PRIVATE_KEY to be configured. */
 async function getOwnerAccount(): Promise<Account> {
   if (ownerAccount) return ownerAccount;
-  if (!OWNER_ACCOUNT_ID) {
-    throw new Error("NEAR_OWNER_ACCOUNT_ID is not configured");
+  if (!OWNER_ACCOUNT_ID || !OWNER_PRIVATE_KEY) {
+    throw new Error(
+      "No NEAR signing key configured — this instance is read-only. See README for self-deploy instructions to enable writes."
+    );
   }
   const near = await getNear();
   ownerAccount = await near.account(OWNER_ACCOUNT_ID);
@@ -71,10 +90,7 @@ export type ContractDecision =
   | { NeedsApproval: { request_id: number } };
 
 async function viewContract<T>(method: string, args: object = {}): Promise<T> {
-  if (!CONTRACT_ID) {
-    throw new Error("NEAR_POLICY_CONTRACT_ID is not configured");
-  }
-  const account = await getOwnerAccount();
+  const account = await getViewAccount();
   return account.viewFunction({
     contractId: CONTRACT_ID,
     methodName: method,
@@ -86,9 +102,6 @@ async function callContract<T>(
   method: string,
   args: object = {}
 ): Promise<T> {
-  if (!CONTRACT_ID) {
-    throw new Error("NEAR_POLICY_CONTRACT_ID is not configured");
-  }
   const account = await getOwnerAccount();
   const result = await account.functionCall({
     contractId: CONTRACT_ID,

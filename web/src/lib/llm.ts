@@ -1,14 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-haiku-5-5";
+const ANTHROPIC_MODEL =
+  process.env.ANTHROPIC_MODEL ?? "claude-3-5-haiku-20241022";
+const NEAR_AI_MODEL =
+  process.env.NEAR_AI_MODEL ?? "meta-llama/Llama-3.3-70B-Instruct";
+const NEAR_AI_BASE_URL =
+  process.env.NEAR_AI_BASE_URL ?? "https://api.near.ai/v1";
 
-let client: Anthropic | null = null;
+let anthropicClient: Anthropic | null = null;
 
-function getClient(): Anthropic | null {
+function getAnthropicClient(): Anthropic | null {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
-  client ??= new Anthropic({ apiKey });
-  return client;
+  anthropicClient ??= new Anthropic({ apiKey });
+  return anthropicClient;
 }
 
 export interface PaymentIntent {
@@ -39,22 +44,7 @@ name as written).`;
 const CLARIFICATION_FALLBACK =
   "I couldn't understand that request. Could you rephrase it with an amount and who to pay (e.g. \"pay 25 to openai.near for API usage\")?";
 
-async function callLlm(task: string): Promise<IntentResult> {
-  const anthropic = getClient();
-  if (!anthropic) {
-    throw new Error("ANTHROPIC_API_KEY is not configured");
-  }
-
-  const message = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 300,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: task }],
-  });
-
-  const textBlock = message.content.find((block) => block.type === "text");
-  const raw = textBlock?.text.trim() ?? "";
-
+function parseIntentJson(raw: string): IntentResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -100,23 +90,105 @@ async function callLlm(task: string): Promise<IntentResult> {
   return { intent: null, clarification: CLARIFICATION_FALLBACK };
 }
 
-const NEAR_ACCOUNT_RE = /\b[a-z0-9_-]+\.(?:near|testnet)\b/i;
-const COUNTERPARTY_WORD_RE = /\b(?:to|for)\s+([a-zA-Z0-9_.-]+)/i;
-const AMOUNT_RE = /\$?\s*(\d+(?:\.\d+)?)/;
+/**
+ * Primary Native Model: Llama 3.3 70B via NEAR AI Cloud (OpenAI-compatible)
+ */
+async function callNearAi(task: string): Promise<IntentResult> {
+  const apiKey = process.env.NEAR_AI_API_KEY ?? process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("NEAR_AI_API_KEY is not configured");
+  }
+
+  const res = await fetch(`${NEAR_AI_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: NEAR_AI_MODEL,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: task },
+      ],
+      temperature: 0.1,
+      max_tokens: 300,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`NEAR AI call failed with HTTP ${res.status.toString()}`);
+  }
+
+  const data: unknown = await res.json();
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "choices" in data &&
+    Array.isArray(data.choices) &&
+    data.choices.length > 0
+  ) {
+    const firstChoice: unknown = data.choices[0];
+    if (
+      typeof firstChoice === "object" &&
+      firstChoice !== null &&
+      "message" in firstChoice &&
+      typeof firstChoice.message === "object" &&
+      firstChoice.message !== null &&
+      "content" in firstChoice.message &&
+      typeof firstChoice.message.content === "string"
+    ) {
+      return parseIntentJson(firstChoice.message.content.trim());
+    }
+  }
+
+  return { intent: null, clarification: CLARIFICATION_FALLBACK };
+}
+
+/**
+ * Alternative Model: Claude 3.5 Haiku via Anthropic SDK
+ */
+async function callAnthropic(task: string): Promise<IntentResult> {
+  const anthropic = getAnthropicClient();
+  if (!anthropic) {
+    throw new Error("ANTHROPIC_API_KEY is not configured");
+  }
+
+  const message = await anthropic.messages.create({
+    model: ANTHROPIC_MODEL,
+    max_tokens: 300,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: "user", content: task }],
+  });
+
+  const textBlock = message.content.find((block) => block.type === "text");
+  const raw = textBlock?.text.trim() ?? "";
+  return parseIntentJson(raw);
+}
+
+const NEAR_ACCOUNT_RE = /\b[a-z0-9_.-]+\.(?:near|testnet)\b/i;
+const COUNTERPARTY_WORD_RE = /(?:to|for|ให้|ไปที่|บัญชี)\s+([a-zA-Z0-9_.-]+)/i;
+const VERB_AMOUNT_RE = /(?:pay|send|transfer|โอน|จ่าย|\$)\s*(\d+(?:\.\d+)?)/i;
+const UNIT_AMOUNT_RE = /(\d+(?:\.\d+)?)\s*(?:near|\$|usd|usdt|tokens?)/i;
+const GENERIC_AMOUNT_RE = /\b(\d+(?:\.\d+)?)\b/;
 
 /**
  * Regex-based fallback used whenever no LLM is configured or reachable, so
  * the chat (and AI-judge screening) never hard-fails on a missing API key.
- * Handles simple "pay/send <amount> to <counterparty> for <reason>" phrasing;
+ * Handles simple "pay/send <amount> to <counterparty> for <reason>" phrasing (both EN & TH);
  * anything more ambiguous falls through to a clarification request.
  */
 export function heuristicExtract(task: string): IntentResult {
-  const amountMatch = AMOUNT_RE.exec(task);
   const nearMatch = NEAR_ACCOUNT_RE.exec(task);
   const wordMatch = COUNTERPARTY_WORD_RE.exec(task);
   const counterparty = nearMatch?.[0] ?? wordMatch?.[1];
 
+  const amountMatch =
+    VERB_AMOUNT_RE.exec(task) ??
+    UNIT_AMOUNT_RE.exec(task) ??
+    GENERIC_AMOUNT_RE.exec(task);
   const amountStr = amountMatch?.[1];
+
   if (!amountStr || !counterparty) {
     return { intent: null, clarification: CLARIFICATION_FALLBACK };
   }
@@ -135,15 +207,24 @@ export function heuristicExtract(task: string): IntentResult {
 export async function extractPaymentIntent(
   task: string
 ): Promise<IntentResult> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return heuristicExtract(task);
+  // 1. Primary Native: NEAR AI Cloud (Llama 3.3 70B on TEE)
+  if (process.env.NEAR_AI_API_KEY || process.env.OPENAI_API_KEY) {
+    try {
+      return await callNearAi(task);
+    } catch {
+      // Degrade to alternative or heuristic
+    }
   }
 
-  try {
-    return await callLlm(task);
-  } catch {
-    // Network failure, bad key, rate limit, etc. — degrade to the
-    // heuristic parser rather than breaking the chat entirely.
-    return heuristicExtract(task);
+  // 2. Secondary Alternative: Anthropic Claude (Claude 3.5 Haiku)
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      return await callAnthropic(task);
+    } catch {
+      // Degrade to heuristic
+    }
   }
+
+  // 3. Fallback: Deterministic Heuristic Parser (Zero-Key for AI screening)
+  return heuristicExtract(task);
 }
