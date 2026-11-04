@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type { PendingRequest, PolicyView } from "@/lib/near";
+import { contractAmountToNear } from "@/lib/approval-workflow";
+import { adminFetch } from "@/lib/admin-fetch";
 
 export function ControlPanel() {
   const [policy, setPolicy] = useState<PolicyView | null>(null);
@@ -37,14 +39,10 @@ export function ControlPanel() {
   ) {
     setPendingAction(r.id);
     try {
-      await fetch(`/api/approvals/${r.id.toString()}`, {
+      await adminFetch(`/api/approvals/${r.id.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          counterparty: r.counterparty,
-          amount: r.amount,
-        }),
+        body: JSON.stringify({ action }),
       });
       await load();
     } finally {
@@ -109,7 +107,9 @@ export function ControlPanel() {
                 className="rounded-md border border-border p-3 space-y-2"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold">{r.amount}</span>
+                  <span className="font-semibold">
+                    {contractAmountToNear(r.amount)} NEAR
+                  </span>
                   <Badge variant="outline" className="border-warning/40 text-warning">
                     {r.status}
                   </Badge>

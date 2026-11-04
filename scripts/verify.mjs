@@ -7,9 +7,9 @@
  * Runs:
  * 1. Rust Smart Contract Unit Tests (8/8)
  * 2. Rust Clippy with maximum strictness (-W clippy::pedantic -W clippy::nursery)
- * 3. Next.js ESLint (TypeScript strict-type-checked)
- * 4. TypeScript Compiler & Next.js Production Build
- * 5. Live NEAR Testnet Contract State Query
+ * 3. Web security regression tests
+ * 4. Next.js ESLint (TypeScript strict-type-checked)
+ * 5. TypeScript Compiler & Next.js Production Build
  */
 
 import { spawnSync } from "node:child_process";
@@ -68,10 +68,13 @@ runStep(
   ]
 );
 
-// 3. Web ESLint
+// 3. Web security regression tests
+runStep("Web Security Regression Tests", "npm", ["test"], webDir);
+
+// 4. Web ESLint
 runStep("Web ESLint (Strict Type Checked)", "npm", ["run", "lint"], webDir);
 
-// 4. Web Build
+// 5. Web Build
 runStep("TypeScript & Next.js Production Build", "npm", ["run", "build"], webDir);
 
 // Summary Table

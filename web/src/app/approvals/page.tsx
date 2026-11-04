@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { PendingRequest } from "@/lib/near";
+import { contractAmountToNear } from "@/lib/approval-workflow";
+import { adminFetch } from "@/lib/admin-fetch";
 
 export default function ApprovalsPage() {
   const [requests, setRequests] = useState<PendingRequest[]>([]);
@@ -39,14 +41,10 @@ export default function ApprovalsPage() {
   ) {
     setPendingAction(r.id);
     try {
-      const res = await fetch(`/api/approvals/${r.id.toString()}`, {
+      const res = await adminFetch(`/api/approvals/${r.id.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          counterparty: r.counterparty,
-          amount: r.amount,
-        }),
+        body: JSON.stringify({ action }),
       });
       const data: { error?: string } = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit decision");
@@ -83,7 +81,9 @@ export default function ApprovalsPage() {
               <CardContent className="flex items-center justify-between gap-4 py-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg font-semibold">{r.amount}</span>
+                    <span className="text-lg font-semibold">
+                      {contractAmountToNear(r.amount)} NEAR
+                    </span>
                     <Badge variant="outline" className="border-warning/40 text-warning">
                       {r.status}
                     </Badge>

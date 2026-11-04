@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import type { PolicyView } from "@/lib/near";
+import { adminFetch } from "@/lib/admin-fetch";
 
 export default function PolicyPage() {
   const [policy, setPolicy] = useState<PolicyView | null>(null);
@@ -50,7 +51,7 @@ export default function PolicyPage() {
     setSaving(true);
     setSaved(false);
     try {
-      const res = await fetch("/api/policy", {
+      const res = await adminFetch("/api/policy", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
