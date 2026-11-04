@@ -26,7 +26,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="h-full flex overflow-hidden">
         <AppSidebar />
-        <div className="flex flex-1 min-w-0 flex-col">{children}</div>
+        <div className="flex flex-1 min-w-0 min-h-0 flex-col h-full overflow-hidden">{children}</div>
       </body>
     </html>
   );
