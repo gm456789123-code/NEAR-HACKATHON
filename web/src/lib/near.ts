@@ -23,7 +23,11 @@ async function getNear(): Promise<Near> {
   if (nearConnection) return nearConnection;
 
   const keyStore = new keyStores.InMemoryKeyStore();
-  if (OWNER_ACCOUNT_ID && OWNER_PRIVATE_KEY) {
+  const isValidKey =
+    OWNER_PRIVATE_KEY.length > 20 &&
+    !OWNER_PRIVATE_KEY.includes("...") &&
+    OWNER_PRIVATE_KEY.startsWith("ed25519:");
+  if (OWNER_ACCOUNT_ID && isValidKey) {
     await keyStore.setKey(
       NETWORK_ID,
       OWNER_ACCOUNT_ID,
