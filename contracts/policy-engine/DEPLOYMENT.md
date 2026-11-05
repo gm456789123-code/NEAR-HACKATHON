@@ -31,6 +31,8 @@ precision loss in JS/TS clients (`amount`, `daily_limit`, `per_tx_limit`,
 - `execute_if_allowed` with amount over `per_tx_limit` → `NeedsApproval { request_id }`
 - whitelisted counterparties bypass manual review only while remaining within hard per-transaction and daily limits
 - `approve_request` → returns `(Allowed, PendingRequest)` and records spend
+- `get_owner` / `transfer_ownership` → support verified application-level owner rotation without a state migration
+- whitelist, blacklist, and agent membership changes emit structured `EVENT_JSON` audit records
 
 ## Security invariants
 
@@ -40,6 +42,26 @@ precision loss in JS/TS clients (`amount`, `daily_limit`, `per_tx_limit`,
 - The web settlement layer requires approval metadata returned by the upgraded contract and fails closed against the legacy `"Allowed"` response.
 
 > **Deployment required:** changing the Rust source does not update the live Testnet contract. Build and redeploy the WASM before using the updated approval flow.
+
+## Security operations
+
+Run the read-only deployed-policy monitor from the repository root:
+
+```bash
+node scripts/security-monitor.mjs
+```
+
+Before transferring ownership, verify the target multisig or hardware-backed account independently. The transfer is immediate, and the previous owner loses access to owner-only methods:
+
+```bash
+npx near-cli view treasury-mesh-hack3rwin.testnet get_owner
+npx near-cli call treasury-mesh-hack3rwin.testnet transfer_ownership \
+  '{"new_owner":"verified-multisig.testnet"}' \
+  --accountId treasury-mesh-hack3rwin.testnet
+npx near-cli view treasury-mesh-hack3rwin.testnet get_owner
+```
+
+Do not run this command until the target account, recovery process, and signer quorum have been tested. Contract owner rotation does not remove full-access deployment keys from the contract account; manage those keys separately as described in `SECURITY.md`.
 
 ## Useful commands (near-cli, legacy JS)
 

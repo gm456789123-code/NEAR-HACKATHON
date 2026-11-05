@@ -1,5 +1,9 @@
-import { connect, keyStores, KeyPair, Near, utils } from "near-api-js";
-import type { Account } from "near-api-js";
+import {
+  Account,
+  JsonRpcProvider,
+  nearToYocto,
+  type KeyPairString,
+} from "near-api-js";
 import { withTimeout } from "@/lib/near-timeout";
 
 // Defaults point at our already-deployed, public testnet contract so the
@@ -7,7 +11,6 @@ import { withTimeout } from "@/lib/near-timeout";
 // account id and a deployed contract id are public on-chain information.
 // Only NEAR_OWNER_PRIVATE_KEY is a secret, is never defaulted, and is only
 // needed for write calls (approve/reject, agent payments). See README.
-const NETWORK_ID = process.env.NEAR_NETWORK_ID ?? "testnet";
 const NODE_URL =
   process.env.NEAR_NODE_URL ?? "https://rpc.testnet.near.org";
 const CONTRACT_ID =
@@ -21,52 +24,34 @@ const RPC_TIMEOUT_MS =
     ? configuredRpcTimeout
     : 8000;
 
-let nearConnection: Near | null = null;
+let provider: JsonRpcProvider | null = null;
 let ownerAccount: Account | null = null;
-let viewAccount: Account | null = null;
 
-async function getNear(): Promise<Near> {
-  if (nearConnection) return nearConnection;
-
-  const keyStore = new keyStores.InMemoryKeyStore();
-  const isValidKey =
-    OWNER_PRIVATE_KEY.length > 20 &&
-    !OWNER_PRIVATE_KEY.includes("...") &&
-    OWNER_PRIVATE_KEY.startsWith("ed25519:");
-  if (OWNER_ACCOUNT_ID && isValidKey) {
-    await keyStore.setKey(
-      NETWORK_ID,
-      OWNER_ACCOUNT_ID,
-      KeyPair.fromString(OWNER_PRIVATE_KEY as never)
-    );
-  }
-
-  nearConnection = await connect({
-    networkId: NETWORK_ID,
-    nodeUrl: NODE_URL,
-    keyStore,
-  });
-  return nearConnection;
-}
-
-/** Used for view calls, which never sign anything — no key required. */
-async function getViewAccount(): Promise<Account> {
-  if (viewAccount) return viewAccount;
-  const near = await getNear();
-  viewAccount = await near.account(CONTRACT_ID);
-  return viewAccount;
+function getProvider(): JsonRpcProvider {
+  provider ??= new JsonRpcProvider({ url: NODE_URL });
+  return provider;
 }
 
 /** Used for write calls — requires NEAR_OWNER_PRIVATE_KEY to be configured. */
-async function getOwnerAccount(): Promise<Account> {
+function getOwnerAccount(): Account {
   if (ownerAccount) return ownerAccount;
   if (!OWNER_ACCOUNT_ID || !OWNER_PRIVATE_KEY) {
     throw new Error(
       "No NEAR signing key configured — this instance is read-only. See README for self-deploy instructions to enable writes."
     );
   }
-  const near = await getNear();
-  ownerAccount = await near.account(OWNER_ACCOUNT_ID);
+  const isValidKey =
+    OWNER_PRIVATE_KEY.length > 20 &&
+    !OWNER_PRIVATE_KEY.includes("...") &&
+    OWNER_PRIVATE_KEY.startsWith("ed25519:");
+  if (!isValidKey) {
+    throw new Error("NEAR_OWNER_PRIVATE_KEY is not a valid ed25519 private key");
+  }
+  ownerAccount = new Account(
+    OWNER_ACCOUNT_ID,
+    getProvider(),
+    OWNER_PRIVATE_KEY as KeyPairString
+  );
   return ownerAccount;
 }
 
@@ -99,16 +84,16 @@ export type ContractDecision =
   | { Blocked: { reason: string } }
   | { NeedsApproval: { request_id: number } };
 
-async function viewContract<T>(method: string, args: object = {}): Promise<T> {
+async function viewContract<T>(
+  method: string,
+  args: object = {}
+): Promise<T> {
   return withTimeout(
-    (async () => {
-      const account = await getViewAccount();
-      return account.viewFunction({
-        contractId: CONTRACT_ID,
-        methodName: method,
-        args,
-      }) as Promise<T>;
-    })(),
+    getProvider().callFunction({
+      contractId: CONTRACT_ID,
+      method,
+      args: args as Record<string, unknown>,
+    }) as Promise<T>,
     RPC_TIMEOUT_MS,
     method
   );
@@ -118,24 +103,19 @@ async function callContract<T>(
   method: string,
   args: object = {}
 ): Promise<T> {
-  const result = await withTimeout(
-    (async () => {
-      const account = await getOwnerAccount();
-      return account.functionCall({
-        contractId: CONTRACT_ID,
-        methodName: method,
-        args,
-        gas: BigInt("30000000000000"),
-      });
-    })(),
+  return withTimeout(
+    Promise.resolve().then(
+      () =>
+        getOwnerAccount().callFunction({
+          contractId: CONTRACT_ID,
+          methodName: method,
+          args: args as Record<string, unknown>,
+          gas: BigInt("30000000000000"),
+        }) as Promise<T>
+    ),
     RPC_TIMEOUT_MS,
     method
   );
-  const status = result.status as { SuccessValue?: string };
-  if (!status.SuccessValue) return undefined as T;
-  return JSON.parse(
-    Buffer.from(status.SuccessValue, "base64").toString("utf-8")
-  ) as T;
 }
 
 export interface TransferResult {
@@ -155,16 +135,18 @@ export async function sendNear(
   receiverId: string,
   amountNear: string
 ): Promise<TransferResult> {
-  const amountYocto = utils.format.parseNearAmount(amountNear);
-  if (!amountYocto) {
+  let amountYocto: bigint;
+  try {
+    amountYocto = nearToYocto(amountNear as `${number}`);
+  } catch {
     return { success: false, error: `Invalid NEAR amount: ${amountNear}` };
   }
 
   try {
     const outcome = await withTimeout(
       (async () => {
-        const account = await getOwnerAccount();
-        return account.sendMoney(receiverId, BigInt(amountYocto));
+        const account = getOwnerAccount();
+        return account.transfer({ receiverId, amount: amountYocto });
       })(),
       RPC_TIMEOUT_MS,
       "send_money"
