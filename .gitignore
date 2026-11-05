@@ -11,3 +11,11 @@ target/
 *.db
 *.db-journal
 src/generated/
+
+# Internal docs & scratchpads
+AGENT.md
+Design.md
+Bug.md
+HACKERONE_*.md
+SECURITY_AUDIT_*.md
+docs/
