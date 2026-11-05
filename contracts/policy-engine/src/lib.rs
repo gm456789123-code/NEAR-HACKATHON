@@ -113,6 +113,7 @@ impl PolicyEngine {
         per_tx_limit: U128,
         auto_approve_below: U128,
     ) -> Self {
+        Self::assert_policy_invariants(daily_limit.0, per_tx_limit.0, auto_approve_below.0);
         Self {
             owner,
             daily_limit: daily_limit.0,
@@ -229,7 +230,7 @@ impl PolicyEngine {
     /// # Panics
     /// Panics if `id` does not refer to an existing request, or if that
     /// request has already been approved or rejected.
-    pub fn approve_request(&mut self, id: u64) -> Decision {
+    pub fn approve_request(&mut self, id: u64) -> (Decision, PendingRequest) {
         self.assert_owner();
         let mut req = self.requests.get(&id).cloned().expect("Request not found");
         require!(matches!(req.status, ApprovalStatus::Pending), "Request already decided");
@@ -243,7 +244,7 @@ impl PolicyEngine {
         env::log_str(&format!(
             "EVENT_JSON:{{\"type\":\"approval_decision\",\"decision\":\"approved\",\"request_id\":{id}}}"
         ));
-        Decision::Allowed
+        (Decision::Allowed, req)
     }
 
     /// # Panics
@@ -277,21 +278,32 @@ impl PolicyEngine {
         window_end_min: Option<MinuteOfDay>,
     ) {
         self.assert_owner();
-        if let Some(v) = daily_limit {
-            self.daily_limit = v.0;
+        let next_daily_limit = daily_limit.map_or(self.daily_limit, |value| value.0);
+        let next_per_tx_limit = per_tx_limit.map_or(self.per_tx_limit, |value| value.0);
+        let next_auto_approve_below =
+            auto_approve_below.map_or(self.auto_approve_below, |value| value.0);
+
+        Self::assert_policy_invariants(
+            next_daily_limit,
+            next_per_tx_limit,
+            next_auto_approve_below,
+        );
+        require!(
+            window_start_min.is_some() == window_end_min.is_some(),
+            "Time window start and end must be updated together"
+        );
+        if let (Some(start), Some(end)) = (window_start_min, window_end_min) {
+            require!(
+                start <= 1440 && end <= 1440,
+                "Time window must be within 0..=1440"
+            );
+            self.window_start_min = Some(start);
+            self.window_end_min = Some(end);
         }
-        if let Some(v) = per_tx_limit {
-            self.per_tx_limit = v.0;
-        }
-        if let Some(v) = auto_approve_below {
-            self.auto_approve_below = v.0;
-        }
-        if window_start_min.is_some() {
-            self.window_start_min = window_start_min;
-        }
-        if window_end_min.is_some() {
-            self.window_end_min = window_end_min;
-        }
+
+        self.daily_limit = next_daily_limit;
+        self.per_tx_limit = next_per_tx_limit;
+        self.auto_approve_below = next_auto_approve_below;
         env::log_str("EVENT_JSON:{\"type\":\"policy_updated\"}");
     }
 
@@ -359,6 +371,23 @@ impl PolicyEngine {
         self.daily_spent.set(day, Some(spent + amount));
     }
 
+    fn assert_policy_invariants(daily_limit: u128, per_tx_limit: u128, auto_approve_below: u128) {
+        require!(daily_limit > 0, "Daily limit must be positive");
+        require!(per_tx_limit > 0, "Per-transaction limit must be positive");
+        require!(
+            auto_approve_below > 0,
+            "Auto-approve threshold must be positive"
+        );
+        require!(
+            auto_approve_below <= per_tx_limit,
+            "Auto-approve threshold must not exceed per-transaction limit"
+        );
+        require!(
+            per_tx_limit <= daily_limit,
+            "Per-transaction limit must not exceed daily limit"
+        );
+    }
+
     fn evaluate(&self, agent: &AccountId, counterparty: &AccountId, amount: u128) -> Decision {
         if self.paused {
             return Decision::Blocked { reason: "Policy engine is paused".to_string() };
@@ -376,6 +405,14 @@ impl PolicyEngine {
         let day = current_day_index();
         let spent_today = self.daily_spent.get(&day).copied().unwrap_or(0);
         if spent_today + amount > self.daily_limit {
+            return Decision::NeedsApproval { request_id: 0 };
+        }
+
+        if self.whitelist.contains(counterparty) {
+            return Decision::Allowed;
+        }
+
+        if amount > self.auto_approve_below {
             return Decision::NeedsApproval { request_id: 0 };
         }
 
@@ -435,6 +472,53 @@ mod tests {
     }
 
     #[test]
+    fn allows_payment_equal_to_auto_approve_threshold() {
+        let mut contract = setup();
+        set_caller(agent());
+        let decision =
+            contract.execute_if_allowed(&vendor(), U128(50), "threshold invoice".to_string());
+        assert_eq!(decision, Decision::Allowed);
+    }
+
+    #[test]
+    fn needs_approval_above_auto_approve_threshold() {
+        let mut contract = setup();
+        set_caller(agent());
+        let decision =
+            contract.execute_if_allowed(&vendor(), U128(51), "review invoice".to_string());
+        assert!(matches!(decision, Decision::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn whitelist_bypasses_review_threshold_but_not_hard_limits() {
+        let mut contract = setup();
+        set_caller(owner());
+        contract.add_to_whitelist(vendor());
+
+        set_caller(agent());
+        let allowed =
+            contract.execute_if_allowed(&vendor(), U128(250), "trusted vendor".to_string());
+        assert_eq!(allowed, Decision::Allowed);
+
+        let over_limit =
+            contract.execute_if_allowed(&vendor(), U128(301), "trusted but too large".to_string());
+        assert!(matches!(over_limit, Decision::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn blacklist_takes_precedence_over_whitelist() {
+        let mut contract = setup();
+        set_caller(owner());
+        contract.add_to_whitelist(vendor());
+        contract.add_to_blacklist(vendor());
+
+        set_caller(agent());
+        let decision =
+            contract.execute_if_allowed(&vendor(), U128(10), "conflicting lists".to_string());
+        assert!(matches!(decision, Decision::Blocked { .. }));
+    }
+
+    #[test]
     fn needs_approval_above_per_tx_limit() {
         let mut contract = setup();
         set_caller(agent());
@@ -483,8 +567,12 @@ mod tests {
         };
 
         set_caller(owner());
-        let resolved = contract.approve_request(id);
-        assert_eq!(resolved, Decision::Allowed);
+        let (decision, approved) = contract.approve_request(id);
+        assert_eq!(decision, Decision::Allowed);
+        assert_eq!(approved.id, id);
+        assert_eq!(approved.counterparty, vendor());
+        assert_eq!(approved.amount, U128(500));
+        assert!(matches!(approved.status, ApprovalStatus::Approved));
 
         let policy = contract.get_policy();
         assert_eq!(policy.daily_spent_today, U128(500));
@@ -510,6 +598,8 @@ mod tests {
     #[test]
     fn daily_limit_triggers_approval_once_exceeded() {
         let mut contract = setup();
+        set_caller(owner());
+        contract.add_to_whitelist(vendor());
         set_caller(agent());
         // 4 x 250 = 1000, within the 300 per-tx limit each time.
         for _ in 0..4 {
@@ -518,5 +608,45 @@ mod tests {
         }
         let decision = contract.execute_if_allowed(&vendor(), U128(250), "over daily limit".to_string());
         assert!(matches!(decision, Decision::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn rejects_invalid_policy_at_initialization() {
+        set_caller(owner());
+        let result =
+            std::panic::catch_unwind(|| PolicyEngine::new(owner(), U128(100), U128(101), U128(50)));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_relationally_invalid_partial_update_without_mutating_policy() {
+        let mut contract = setup();
+        set_caller(owner());
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.update_policy(Some(U128(200)), None, None, None, None);
+        }));
+        assert!(result.is_err());
+
+        let policy = contract.get_policy();
+        assert_eq!(policy.daily_limit, U128(1000));
+        assert_eq!(policy.per_tx_limit, U128(300));
+        assert_eq!(policy.auto_approve_below, U128(50));
+    }
+
+    #[test]
+    fn rejects_partial_or_out_of_range_time_windows() {
+        let mut contract = setup();
+        set_caller(owner());
+
+        let partial = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.update_policy(None, None, None, Some(60), None);
+        }));
+        assert!(partial.is_err());
+
+        let out_of_range = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.update_policy(None, None, None, Some(0), Some(1441));
+        }));
+        assert!(out_of_range.is_err());
     }
 }

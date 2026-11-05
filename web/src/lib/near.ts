@@ -207,8 +207,9 @@ export const policyEngine = {
       amount,
       reason,
     }),
-  approveRequest: (id: number) =>
-    callContract<ContractDecision>("approve_request", { id }),
+  // The workflow validates this response before settlement. An old contract
+  // returning only "Allowed" therefore fails closed after an upgrade.
+  approveRequest: (id: number) => callContract<unknown>("approve_request", { id }),
   rejectRequest: (id: number) =>
     callContract<ContractDecision>("reject_request", { id }),
   async updatePolicy(args: UpdatePolicyArgs): Promise<void> {

@@ -26,9 +26,20 @@ precision loss in JS/TS clients (`amount`, `daily_limit`, `per_tx_limit`,
 
 - `get_policy` — returns current limits and today's spend
 - `register_agent` — registers `treasury-mesh-hack3rwin.testnet` as a caller
-- `execute_if_allowed` with amount under limits → `Allowed`, spend recorded
+- `execute_if_allowed` at or below `auto_approve_below` → `Allowed`, spend recorded
+- `execute_if_allowed` above `auto_approve_below` → `NeedsApproval { request_id }`
 - `execute_if_allowed` with amount over `per_tx_limit` → `NeedsApproval { request_id }`
-- `approve_request` → resolves the pending request to `Allowed` and records spend
+- whitelisted counterparties bypass manual review only while remaining within hard per-transaction and daily limits
+- `approve_request` → returns `(Allowed, PendingRequest)` and records spend
+
+## Security invariants
+
+- `0 < auto_approve_below <= per_tx_limit <= daily_limit`
+- Time-window bounds must be supplied together and remain within `0..=1440`.
+- Pause, agent registration, blacklist, per-transaction, and daily-limit checks take precedence over whitelist handling.
+- The web settlement layer requires approval metadata returned by the upgraded contract and fails closed against the legacy `"Allowed"` response.
+
+> **Deployment required:** changing the Rust source does not update the live Testnet contract. Build and redeploy the WASM before using the updated approval flow.
 
 ## Useful commands (near-cli, legacy JS)
 
@@ -43,6 +54,7 @@ npx near-cli view treasury-mesh-hack3rwin.testnet list_pending_requests
 npx near-cli call treasury-mesh-hack3rwin.testnet register_agent '{"account":"<agent>.testnet"}' --accountId treasury-mesh-hack3rwin.testnet
 
 # redeploy after a contract change
+cargo build --release --target wasm32-unknown-unknown --manifest-path contracts/policy-engine/Cargo.toml
 npx near-cli deploy treasury-mesh-hack3rwin.testnet contracts/policy-engine/target/wasm32-unknown-unknown/release/policy_engine.wasm
 ```
 

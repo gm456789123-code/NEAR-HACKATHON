@@ -20,7 +20,7 @@ export interface ApprovalTransferResult {
 
 interface ApprovalDependencies {
   listPendingRequests: () => Promise<AuthorizedPendingRequest[]>;
-  approveRequest: (id: number) => Promise<ApprovalDecision>;
+  approveRequest: (id: number) => Promise<unknown>;
   rejectRequest: (id: number) => Promise<ApprovalDecision>;
   sendNear: (
     counterparty: string,
@@ -41,10 +41,49 @@ export class PendingRequestNotFoundError extends Error {
 }
 
 export class ApprovalNotAllowedError extends Error {
-  constructor() {
-    super("The on-chain approval did not authorize settlement");
+  constructor(message = "The on-chain approval did not authorize settlement") {
+    super(message);
     this.name = "ApprovalNotAllowedError";
   }
+}
+
+function parseApprovedRequest(
+  response: unknown,
+  expectedRequestId: number
+): { decision: "Allowed"; request: AuthorizedPendingRequest } {
+  if (!Array.isArray(response) || response.length !== 2) {
+    throw new ApprovalNotAllowedError(
+      "The deployed contract did not return authoritative request metadata"
+    );
+  }
+
+  const [decision, request] = response as [unknown, unknown];
+  if (
+    decision !== "Allowed" ||
+    request === null ||
+    typeof request !== "object"
+  ) {
+    throw new ApprovalNotAllowedError(
+      "The deployed contract did not return authoritative request metadata"
+    );
+  }
+
+  const candidate = request as Record<string, unknown>;
+  if (
+    candidate.id !== expectedRequestId ||
+    candidate.status !== "Approved" ||
+    typeof candidate.counterparty !== "string" ||
+    typeof candidate.amount !== "string"
+  ) {
+    throw new ApprovalNotAllowedError(
+      "The deployed contract returned invalid authoritative request metadata"
+    );
+  }
+
+  return {
+    decision,
+    request: candidate as unknown as AuthorizedPendingRequest,
+  };
 }
 
 export function contractAmountToNear(amount: string): string {
@@ -83,19 +122,16 @@ export async function resolveApproval(
   }
 
   const pendingRequests = await dependencies.listPendingRequests();
-  const authorizedRequest = pendingRequests.find(
-    (request) => request.id === input.requestId
-  );
-  if (!authorizedRequest) {
+  if (!pendingRequests.some((request) => request.id === input.requestId)) {
     throw new PendingRequestNotFoundError(input.requestId);
   }
 
+  const approvalResponse = await dependencies.approveRequest(input.requestId);
+  const { decision, request: authorizedRequest } = parseApprovedRequest(
+    approvalResponse,
+    input.requestId
+  );
   const amountNear = contractAmountToNear(authorizedRequest.amount);
-  const decision = await dependencies.approveRequest(input.requestId);
-  if (decision !== "Allowed") {
-    throw new ApprovalNotAllowedError();
-  }
-
   const settlement = await dependencies.sendNear(
     authorizedRequest.counterparty,
     amountNear
