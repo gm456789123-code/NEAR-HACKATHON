@@ -69,6 +69,8 @@ flowchart TD
 
 The project follows a zero-trust principle: compromise or prompt injection of the LLM must not grant authority to bypass on-chain policy.
 
+Operational procedures and private vulnerability-reporting guidance are maintained in [`SECURITY.md`](SECURITY.md).
+
 ### Implemented security controls
 
 | Control | Security property |
@@ -85,6 +87,9 @@ The project follows a zero-trust principle: compromise or prompt injection of th
 | Sanitized API errors | Internal NEAR VM and RPC details are not returned to clients |
 | Success and failure audit events | Administrative changes, resolution failures, and settlement outcomes are recorded |
 | React text rendering | Audit and dashboard fields are rendered as text; no raw HTML sink is used |
+| Owner-key rotation | Contract administration can be transferred to a verified multisig or hardware-backed account |
+| Policy drift monitoring | A read-only NEAR RPC monitor fails closed on unsafe or unexpected deployed policy state |
+| Supply-chain gates | CI runs dependency audits, secret scanning, tests, lint, and production builds |
 
 ### Approval settlement invariant
 
@@ -117,6 +122,7 @@ This is a hackathon-grade Testnet implementation, not a custody product.
 
 - The server environment and `NEAR_OWNER_PRIVATE_KEY` must be protected by the deployment platform.
 - `TREASURY_ADMIN_TOKEN` is a single-operator bearer credential stored in browser `sessionStorage`; production deployments should use an identity provider, short-lived sessions, role-based access control, and hardware-backed signing.
+- `transfer_ownership` changes application-level administration only. Full-access keys on the contract account can still replace the WASM and require separate offline or multi-party custody.
 - A timeout bounds the HTTP wait but cannot cancel a transaction already accepted by an upstream NEAR RPC node.
 - SQLite audit rows are operational records, not immutable evidence. On-chain events provide the tamper-resistant portion of the audit trail.
 - Public task ingestion is intended for the demo. Internet-facing deployments should add authentication, rate limiting, abuse controls, and request quotas to `/api/agent/task`.
@@ -136,7 +142,7 @@ This is a hackathon-grade Testnet implementation, not a custody product.
 | --- | --- |
 | Dashboard and API | Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui |
 | Smart contract | Rust, `near-sdk` 5.6 |
-| Blockchain client | `near-api-js` 5.1 |
+| Blockchain client | `near-api-js` 7.4 |
 | Persistence | Prisma 6, SQLite |
 | AI providers | NEAR AI Cloud, Anthropic, or deterministic heuristic fallback |
 | Settlement | NEAR Testnet native transfer |
@@ -186,13 +192,15 @@ Open **Settings → Administrator Access** and enter the same value used for `TR
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | Prisma SQLite connection, normally `file:./dev.db` |
-| `NEAR_NETWORK_ID` | No | Defaults to `testnet` |
 | `NEAR_NODE_URL` | No | Defaults to the public NEAR Testnet RPC endpoint |
 | `NEAR_POLICY_CONTRACT_ID` | No | Defaults to the deployed hackathon contract |
 | `NEAR_OWNER_ACCOUNT_ID` | For writes | Account that owns the policy contract and signs transfers |
 | `NEAR_OWNER_PRIVATE_KEY` | For writes | Server-only signing key; never expose it to the browser |
 | `TREASURY_ADMIN_TOKEN` | For admin writes | Minimum 32-character bearer token for approval and policy endpoints |
 | `NEAR_RPC_TIMEOUT_MS` | No | Positive integer timeout; defaults to `8000` ms |
+| `SECURITY_EXPECTED_DAILY_LIMIT` | Monitor only | Expected deployed daily limit; defaults to `5000000000` |
+| `SECURITY_EXPECTED_PER_TX_LIMIT` | Monitor only | Expected deployed per-transaction limit; defaults to `1000000000` |
+| `SECURITY_EXPECTED_AUTO_APPROVE_BELOW` | Monitor only | Expected deployed review threshold; defaults to `50000000` |
 | `NEAR_AI_API_KEY` | No | Enables NEAR AI Cloud intent extraction |
 | `NEAR_AI_BASE_URL` | No | Defaults to the configured NEAR AI-compatible endpoint |
 | `NEAR_AI_MODEL` | No | Model identifier for NEAR AI Cloud |
@@ -240,9 +248,9 @@ npm run verify
 
 The runner executes:
 
-- 15 Rust smart-contract unit tests
+- 20 Rust smart-contract unit tests, including deterministic policy-range and administrative-event coverage
 - Rust Clippy with `pedantic` and `nursery` lints
-- 19 web security regression tests
+- 23 web security regression and deployed-policy monitor tests
 - Strict TypeScript-aware ESLint
 - Next.js production compilation and type checking
 
@@ -255,6 +263,14 @@ npm test
 
 Security regression coverage includes authentication, authoritative approval settlement, exact amount conversion, RPC deadlines, and policy input validation.
 
+Validate the live Testnet policy without credentials:
+
+```bash
+node scripts/security-monitor.mjs
+```
+
+CI additionally performs npm and RustSec dependency audits, scans repository history for secrets, and runs the deployed-policy monitor on a schedule. See [`SECURITY.md`](SECURITY.md) for alert handling, owner rotation, key compromise, rollback, and external-audit procedures.
+
 ## Repository layout
 
 ```text
@@ -264,7 +280,8 @@ Security regression coverage includes authentication, authoritative approval set
 │       ├── src/lib.rs                  # NEAR policy contract
 │       └── DEPLOYMENT.md               # Contract deployment guide
 ├── scripts/
-│   └── verify.mjs                      # Unified verification runner
+│   ├── verify.mjs                      # Unified verification runner
+│   └── security-monitor.mjs            # Read-only deployed-policy drift monitor
 ├── web/
 │   ├── prisma/schema.prisma            # Operational data and audit schema
 │   ├── test/                            # Security regression tests
@@ -280,6 +297,7 @@ Security regression coverage includes authentication, authoritative approval set
 │           ├── orchestrator.ts          # Multi-agent coordination
 │           └── policy-validation.ts     # Policy input validation
 ├── Design.md
+├── SECURITY.md                         # Security policy and operations runbook
 └── README.md
 ```
 

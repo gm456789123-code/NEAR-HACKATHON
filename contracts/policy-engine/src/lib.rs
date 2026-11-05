@@ -150,6 +150,10 @@ impl PolicyEngine {
         }
     }
 
+    pub fn get_owner(&self) -> AccountId {
+        self.owner.clone()
+    }
+
     pub fn is_agent(&self, account: &AccountId) -> bool {
         self.agents.contains(account)
     }
@@ -172,6 +176,19 @@ impl PolicyEngine {
     }
 
     // ---------- mutating ----------
+
+    /// Transfers administrative control without changing the serialized state layout.
+    /// The caller must independently verify `new_owner` before submitting this irreversible call.
+    pub fn transfer_ownership(&mut self, new_owner: AccountId) {
+        self.assert_owner();
+        require!(new_owner != self.owner, "New owner must be different");
+
+        let previous_owner = std::mem::replace(&mut self.owner, new_owner);
+        env::log_str(&format!(
+            "EVENT_JSON:{{\"type\":\"ownership_transferred\",\"previous_owner\":\"{previous_owner}\",\"new_owner\":\"{}\"}}",
+            self.owner
+        ));
+    }
 
     /// Called by an agent before settling a payment. Returns Allowed (caller may proceed
     /// with NEAR Intents settlement), Blocked (must not proceed), or `NeedsApproval`
@@ -328,32 +345,65 @@ impl PolicyEngine {
 
     pub fn add_to_whitelist(&mut self, account: AccountId) {
         self.assert_owner();
-        self.whitelist.insert(account);
+        let account_id = account.to_string();
+        if self.whitelist.insert(account) {
+            env::log_str(&format!(
+                "EVENT_JSON:{{\"type\":\"whitelist_added\",\"account\":\"{account_id}\",\"actor\":\"{}\"}}",
+                env::predecessor_account_id()
+            ));
+        }
     }
 
     pub fn remove_from_whitelist(&mut self, account: &AccountId) {
         self.assert_owner();
-        self.whitelist.remove(account);
+        if self.whitelist.remove(account) {
+            env::log_str(&format!(
+                "EVENT_JSON:{{\"type\":\"whitelist_removed\",\"account\":\"{account}\",\"actor\":\"{}\"}}",
+                env::predecessor_account_id()
+            ));
+        }
     }
 
     pub fn add_to_blacklist(&mut self, account: AccountId) {
         self.assert_owner();
-        self.blacklist.insert(account);
+        let account_id = account.to_string();
+        if self.blacklist.insert(account) {
+            env::log_str(&format!(
+                "EVENT_JSON:{{\"type\":\"blacklist_added\",\"account\":\"{account_id}\",\"actor\":\"{}\"}}",
+                env::predecessor_account_id()
+            ));
+        }
     }
 
     pub fn remove_from_blacklist(&mut self, account: &AccountId) {
         self.assert_owner();
-        self.blacklist.remove(account);
+        if self.blacklist.remove(account) {
+            env::log_str(&format!(
+                "EVENT_JSON:{{\"type\":\"blacklist_removed\",\"account\":\"{account}\",\"actor\":\"{}\"}}",
+                env::predecessor_account_id()
+            ));
+        }
     }
 
     pub fn register_agent(&mut self, account: AccountId) {
         self.assert_owner();
-        self.agents.insert(account);
+        let account_id = account.to_string();
+        if self.agents.insert(account) {
+            env::log_str(&format!(
+                "EVENT_JSON:{{\"type\":\"agent_registered\",\"account\":\"{account_id}\",\"actor\":\"{}\"}}",
+                env::predecessor_account_id()
+            ));
+        }
     }
 
     pub fn revoke_agent(&mut self, account: &AccountId) {
         self.assert_owner();
-        self.agents.remove(account);
+        if self.agents.remove(account) {
+            env::log_str(&format!(
+                "EVENT_JSON:{{\"type\":\"agent_revoked\",\"account\":\"{account}\",\"actor\":\"{}\"}}",
+                env::predecessor_account_id()
+            ));
+        }
     }
 
     // ---------- internal ----------
@@ -436,7 +486,7 @@ impl PolicyEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::test_utils::{get_logs, VMContextBuilder};
     use near_sdk::testing_env;
 
     fn owner() -> AccountId {
@@ -487,6 +537,42 @@ mod tests {
         let decision =
             contract.execute_if_allowed(&vendor(), U128(51), "review invoice".to_string());
         assert!(matches!(decision, Decision::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn representative_amount_range_respects_review_threshold() {
+        let contract = setup();
+
+        for amount in 1..=400 {
+            let decision = contract.check_policy(&agent(), &vendor(), U128(amount));
+            if amount <= 50 {
+                assert_eq!(decision, Decision::Allowed, "amount {amount}");
+            } else {
+                assert!(
+                    matches!(decision, Decision::NeedsApproval { .. }),
+                    "amount {amount}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn representative_whitelist_range_respects_hard_limit() {
+        let mut contract = setup();
+        set_caller(owner());
+        contract.add_to_whitelist(vendor());
+
+        for amount in 1..=400 {
+            let decision = contract.check_policy(&agent(), &vendor(), U128(amount));
+            if amount <= 300 {
+                assert_eq!(decision, Decision::Allowed, "amount {amount}");
+            } else {
+                assert!(
+                    matches!(decision, Decision::NeedsApproval { .. }),
+                    "amount {amount}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -648,5 +734,66 @@ mod tests {
             contract.update_policy(None, None, None, Some(0), Some(1441));
         }));
         assert!(out_of_range.is_err());
+    }
+
+    #[test]
+    fn owner_can_rotate_control() {
+        let mut contract = setup();
+        let next_owner: AccountId = "multisig.testnet".parse().unwrap();
+
+        set_caller(owner());
+        contract.transfer_ownership(next_owner.clone());
+        assert_eq!(contract.get_owner(), next_owner.clone());
+
+        set_caller(owner());
+        let old_owner_attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.pause();
+        }));
+        assert!(old_owner_attempt.is_err());
+
+        set_caller(next_owner);
+        contract.pause();
+        assert!(contract.get_policy().paused);
+    }
+
+    #[test]
+    fn non_owner_cannot_rotate_control() {
+        let mut contract = setup();
+        let next_owner: AccountId = "multisig.testnet".parse().unwrap();
+
+        set_caller(agent());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.transfer_ownership(next_owner);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(contract.get_owner(), owner());
+    }
+
+    #[test]
+    fn administrative_membership_changes_emit_audit_events() {
+        let mut contract = setup();
+        let blocked: AccountId = "blocked.testnet".parse().unwrap();
+        let new_agent: AccountId = "new-agent.testnet".parse().unwrap();
+        set_caller(owner());
+
+        contract.add_to_whitelist(vendor());
+        contract.add_to_blacklist(blocked.clone());
+        contract.register_agent(new_agent.clone());
+        contract.remove_from_whitelist(&vendor());
+        contract.remove_from_blacklist(&blocked);
+        contract.revoke_agent(&new_agent);
+
+        let logs = get_logs().join("\n");
+        for event_type in [
+            "whitelist_added",
+            "blacklist_added",
+            "agent_registered",
+            "whitelist_removed",
+            "blacklist_removed",
+            "agent_revoked",
+        ] {
+            assert!(logs.contains(event_type), "missing {event_type} event");
+        }
     }
 }
