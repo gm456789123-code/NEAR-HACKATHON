@@ -74,6 +74,8 @@ The project follows a zero-trust principle: compromise or prompt injection of th
 | Control | Security property |
 | --- | --- |
 | On-chain policy evaluation | The model cannot self-authorize spending outside contract rules |
+| Auto-approval threshold | Payments above `auto_approve_below` require human review |
+| Safe whitelist precedence | Trusted recipients bypass review only after blacklist and hard-limit checks |
 | Contract-authoritative approval settlement | Client-supplied recipient or amount cannot redirect an approved transfer |
 | Exact unit conversion with `BigInt` | Prevents floating-point loss and million-fold contract-unit/NEAR conversion errors |
 | Owner-only contract mutations | NEAR predecessor checks protect policy and approval state on-chain |
@@ -119,6 +121,7 @@ This is a hackathon-grade Testnet implementation, not a custody product.
 - SQLite audit rows are operational records, not immutable evidence. On-chain events provide the tamper-resistant portion of the audit trail.
 - Public task ingestion is intended for the demo. Internet-facing deployments should add authentication, rate limiting, abuse controls, and request quotas to `/api/agent/task`.
 - Automatic settlement uses direct NEAR Testnet transfers. NEAR Intents/Defuse integration remains a roadmap item.
+- Contract source changes require a WASM redeploy; approval fails closed if the live contract still returns the legacy response.
 
 ## Hackathon tracks
 
@@ -237,9 +240,9 @@ npm run verify
 
 The runner executes:
 
-- 8 Rust smart-contract unit tests
+- 15 Rust smart-contract unit tests
 - Rust Clippy with `pedantic` and `nursery` lints
-- 18 web security regression tests
+- 19 web security regression tests
 - Strict TypeScript-aware ESLint
 - Next.js production compilation and type checking
 

@@ -5,7 +5,7 @@
  * Evaluates all components for judges and automated AI screening (Claude Code / Codex).
  *
  * Runs:
- * 1. Rust Smart Contract Unit Tests (8/8)
+ * 1. Rust Smart Contract Unit Tests
  * 2. Rust Clippy with maximum strictness (-W clippy::pedantic -W clippy::nursery)
  * 3. Web security regression tests
  * 4. Next.js ESLint (TypeScript strict-type-checked)
@@ -45,7 +45,7 @@ console.log("\x1b[1m\x1b[36m====================================================
 
 // 1. Rust Unit Tests
 runStep(
-  "Rust Contract Unit Tests (8/8)",
+  "Rust Contract Unit Tests",
   "cargo",
   ["test", "--manifest-path", `"${contractManifest}"`]
 );

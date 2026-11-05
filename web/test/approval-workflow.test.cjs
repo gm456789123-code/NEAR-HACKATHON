@@ -22,15 +22,17 @@ function pending(overrides = {}) {
   };
 }
 
-test("settles an approval using only the on-chain recipient and exact amount", async () => {
+test("settles an approval using metadata returned atomically by the contract", async () => {
   const calls = [];
   const result = await resolveApproval(
     { requestId: 7, action: "approve" },
     {
-      listPendingRequests: async () => [pending()],
+      listPendingRequests: async () => [
+        pending({ counterparty: "stale.testnet", amount: "999999" }),
+      ],
       approveRequest: async (id) => {
         calls.push(["approve", id]);
-        return "Allowed";
+        return ["Allowed", pending({ status: "Approved" })];
       },
       rejectRequest: async () => assert.fail("must not reject"),
       sendNear: async (recipient, amountNear) => {
@@ -49,12 +51,12 @@ test("settles an approval using only the on-chain recipient and exact amount", a
   assert.equal(result.settlement.txHash, "tx-1");
 });
 
-test("does not mutate or settle when the request is not pending on-chain", async () => {
+test("returns not found without mutating when the request is not pending", async () => {
   await assert.rejects(
     resolveApproval(
       { requestId: 99, action: "approve" },
       {
-        listPendingRequests: async () => [pending()],
+        listPendingRequests: async () => [],
         approveRequest: async () => assert.fail("must not approve"),
         rejectRequest: async () => assert.fail("must not reject"),
         sendNear: async () => assert.fail("must not settle"),
@@ -64,12 +66,26 @@ test("does not mutate or settle when the request is not pending on-chain", async
   );
 });
 
+test("fails closed when the deployed contract returns the legacy approval response", async () => {
+  await assert.rejects(
+    resolveApproval(
+      { requestId: 7, action: "approve" },
+      {
+        listPendingRequests: async () => [pending()],
+        approveRequest: async () => "Allowed",
+        rejectRequest: async () => assert.fail("must not reject"),
+        sendNear: async () => assert.fail("must not settle"),
+      }
+    ),
+    /authoritative request metadata/
+  );
+});
+
 test("rejects without attempting settlement", async () => {
   const calls = [];
   const result = await resolveApproval(
     { requestId: 7, action: "reject" },
     {
-      listPendingRequests: async () => assert.fail("reject does not need settlement data"),
       approveRequest: async () => assert.fail("must not approve"),
       rejectRequest: async (id) => {
         calls.push(["reject", id]);
