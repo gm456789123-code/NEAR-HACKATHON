@@ -13,6 +13,7 @@ target/
 src/generated/
 
 # Internal docs & scratchpads
+SECURITY.md
 AGENT.md
 Design.md
 Bug.md
