@@ -69,7 +69,7 @@ flowchart TD
 
 The project follows a zero-trust principle: compromise or prompt injection of the LLM must not grant authority to bypass on-chain policy.
 
-Operational procedures and private vulnerability-reporting guidance are maintained in [`SECURITY.md`](SECURITY.md).
+To report a vulnerability, do not disclose exploitable details in a public issue — use GitHub's private vulnerability reporting for this repository, or contact the repository owner directly. Include the affected commit, reproduction steps, impact, and any transaction identifiers. Do not move real funds, access data that is not yours, or degrade shared infrastructure while testing.
 
 ### Implemented security controls
 
@@ -270,7 +270,7 @@ Validate the live Testnet policy without credentials:
 node scripts/security-monitor.mjs
 ```
 
-CI additionally performs npm and RustSec dependency audits, scans repository history for secrets, and runs the deployed-policy monitor on a schedule. See [`SECURITY.md`](SECURITY.md) for alert handling, owner rotation, key compromise, rollback, and external-audit procedures.
+CI additionally performs npm and RustSec dependency audits, scans repository history for secrets, and runs the deployed-policy monitor on a schedule (see `.github/workflows/security.yml`).
 
 ## Repository layout
 
@@ -297,8 +297,6 @@ CI additionally performs npm and RustSec dependency audits, scans repository his
 │           ├── near.ts                  # NEAR client and settlement layer
 │           ├── orchestrator.ts          # Multi-agent coordination
 │           └── policy-validation.ts     # Policy input validation
-├── Design.md
-├── SECURITY.md                         # Security policy and operations runbook
 └── README.md
 ```
 

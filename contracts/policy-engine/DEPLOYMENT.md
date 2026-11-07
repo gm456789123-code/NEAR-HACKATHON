@@ -61,7 +61,7 @@ npx near-cli call treasury-mesh-hack3rwin.testnet transfer_ownership \
 npx near-cli view treasury-mesh-hack3rwin.testnet get_owner
 ```
 
-Do not run this command until the target account, recovery process, and signer quorum have been tested. Contract owner rotation does not remove full-access deployment keys from the contract account; manage those keys separately as described in `SECURITY.md`.
+Do not run this command until the target account, recovery process, and signer quorum have been tested. Contract owner rotation does not remove full-access deployment keys from the contract account — those keys must be managed and secured separately (e.g. a hardware-backed or multi-party signer), independent of the application-level `owner` this method rotates.
 
 ## Useful commands (near-cli, legacy JS)
 
