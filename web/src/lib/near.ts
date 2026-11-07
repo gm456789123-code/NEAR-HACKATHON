@@ -18,11 +18,19 @@ const CONTRACT_ID =
 const OWNER_ACCOUNT_ID =
   process.env.NEAR_OWNER_ACCOUNT_ID ?? "treasury-mesh-hack3rwin.testnet";
 const OWNER_PRIVATE_KEY = process.env.NEAR_OWNER_PRIVATE_KEY ?? "";
-const configuredRpcTimeout = Number(process.env.NEAR_RPC_TIMEOUT_MS ?? "8000");
-const RPC_TIMEOUT_MS =
-  Number.isSafeInteger(configuredRpcTimeout) && configuredRpcTimeout > 0
-    ? configuredRpcTimeout
-    : 8000;
+function readTimeoutMs(envVar: string, fallback: number): number {
+  const configured = Number(process.env[envVar] ?? String(fallback));
+  return Number.isSafeInteger(configured) && configured > 0
+    ? configured
+    : fallback;
+}
+
+// View calls are a single read-only RPC query — a few seconds is plenty.
+const RPC_TIMEOUT_MS = readTimeoutMs("NEAR_RPC_TIMEOUT_MS", 8000);
+// Write calls wait for on-chain finality (nonce lookup, broadcast, execution)
+// and routinely take 10-25s on testnet; 8s here causes spurious failures on
+// every real payment or settlement, so it gets its own, longer default.
+const RPC_WRITE_TIMEOUT_MS = readTimeoutMs("NEAR_RPC_WRITE_TIMEOUT_MS", 30000);
 
 let provider: JsonRpcProvider | null = null;
 let ownerAccount: Account | null = null;
@@ -113,7 +121,7 @@ async function callContract<T>(
           gas: BigInt("30000000000000"),
         }) as Promise<T>
     ),
-    RPC_TIMEOUT_MS,
+    RPC_WRITE_TIMEOUT_MS,
     method
   );
 }
@@ -148,7 +156,7 @@ export async function sendNear(
         const account = getOwnerAccount();
         return account.transfer({ receiverId, amount: amountYocto });
       })(),
-      RPC_TIMEOUT_MS,
+      RPC_WRITE_TIMEOUT_MS,
       "send_money"
     );
     const txHash: string = outcome.transaction.hash;

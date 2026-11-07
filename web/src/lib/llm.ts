@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const ANTHROPIC_MODEL =
-  process.env.ANTHROPIC_MODEL ?? "claude-3-5-haiku-20241022";
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-haiku-5-5";
 const NEAR_AI_MODEL =
   process.env.NEAR_AI_MODEL ?? "meta-llama/Llama-3.3-70B-Instruct";
 const NEAR_AI_BASE_URL =
