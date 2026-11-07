@@ -197,7 +197,8 @@ Open **Settings → Administrator Access** and enter the same value used for `TR
 | `NEAR_OWNER_ACCOUNT_ID` | For writes | Account that owns the policy contract and signs transfers |
 | `NEAR_OWNER_PRIVATE_KEY` | For writes | Server-only signing key; never expose it to the browser |
 | `TREASURY_ADMIN_TOKEN` | For admin writes | Minimum 32-character bearer token for approval and policy endpoints |
-| `NEAR_RPC_TIMEOUT_MS` | No | Positive integer timeout; defaults to `8000` ms |
+| `NEAR_RPC_TIMEOUT_MS` | No | Timeout for read-only NEAR view calls; defaults to `8000` ms |
+| `NEAR_RPC_WRITE_TIMEOUT_MS` | No | Timeout for NEAR write calls (waits for on-chain finality, routinely 10-25s); defaults to `30000` ms |
 | `SECURITY_EXPECTED_DAILY_LIMIT` | Monitor only | Expected deployed daily limit; defaults to `5000000000` |
 | `SECURITY_EXPECTED_PER_TX_LIMIT` | Monitor only | Expected deployed per-transaction limit; defaults to `1000000000` |
 | `SECURITY_EXPECTED_AUTO_APPROVE_BELOW` | Monitor only | Expected deployed review threshold; defaults to `50000000` |
