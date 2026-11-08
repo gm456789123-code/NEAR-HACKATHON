@@ -9,6 +9,15 @@ import type { PendingRequest, PolicyView } from "@/lib/near";
 import { contractAmountToNear } from "@/lib/approval-workflow";
 import { adminFetch } from "@/lib/admin-fetch";
 
+function formatNear(amount: string): string {
+  if (amount === "0") return "0";
+  try {
+    return contractAmountToNear(amount);
+  } catch {
+    return amount;
+  }
+}
+
 export function ControlPanel() {
   const [policy, setPolicy] = useState<PolicyView | null>(null);
   const [requests, setRequests] = useState<PendingRequest[]>([]);
@@ -96,7 +105,7 @@ export function ControlPanel() {
                 <div className="flex justify-between text-xs text-[#8ea998] mb-1.5 font-medium">
                   <span>Daily usage</span>
                   <span className="text-white font-mono font-semibold">
-                    {contractAmountToNear(policy.daily_spent_today)} / {contractAmountToNear(policy.daily_limit)} NEAR
+                    {formatNear(policy.daily_spent_today)} / {formatNear(policy.daily_limit)} NEAR
                   </span>
                 </div>
                 <div className="h-2 w-full bg-[#102017] rounded-full overflow-hidden p-0.5 border border-[#14281e]">
@@ -115,13 +124,13 @@ export function ControlPanel() {
                 <div className="flex justify-between items-center">
                   <span className="text-[#8ea998]">Per-tx limit</span>
                   <span className="font-semibold text-white font-mono">
-                    {contractAmountToNear(policy.per_tx_limit)} NEAR
+                    {formatNear(policy.per_tx_limit)} NEAR
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[#8ea998]">Auto-approve below</span>
                   <span className="font-semibold text-[#00ec97] font-mono">
-                    {contractAmountToNear(policy.auto_approve_below)} NEAR
+                    {formatNear(policy.auto_approve_below)} NEAR
                   </span>
                 </div>
               </div>
@@ -162,7 +171,7 @@ export function ControlPanel() {
                 >
                   <div className="flex items-center justify-between font-semibold">
                     <span className="text-white font-mono">
-                      {contractAmountToNear(r.amount)} NEAR
+                      {formatNear(r.amount)} NEAR
                     </span>
                     <Badge variant="outline" className="border-warning/40 text-warning text-[10px] px-1.5 py-0">
                       {r.status}

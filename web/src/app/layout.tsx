@@ -23,8 +23,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="h-full flex overflow-hidden">
+      <body className="h-full flex overflow-hidden" suppressHydrationWarning>
         <AppSidebar />
         <div className="flex flex-1 min-w-0 min-h-0 flex-col h-full overflow-hidden">{children}</div>
       </body>
