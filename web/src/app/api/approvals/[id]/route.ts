@@ -70,39 +70,43 @@ export async function POST(
       }
     );
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: "HUMAN",
-        actorId: policyEngine.contractId,
-        action: action === "approve" ? "approve_request" : "reject_request",
-        resource: `request:${requestId.toString()}`,
-        status: action === "approve" ? "ALLOWED" : "BLOCKED",
-        detail: JSON.stringify(result.decision),
-      },
-    });
-
-    if (result.settlement) {
-      await prisma.transaction.create({
-        data: {
-          amount: Number.parseFloat(result.amountNear),
-          counterparty: result.authorizedRequest.counterparty,
-          status: result.settlement.success ? "EXECUTED" : "FAILED",
-          txHash: result.settlement.txHash ?? null,
-        },
-      });
-
+    try {
       await prisma.auditLog.create({
         data: {
-          actorType: "SYSTEM",
-          actorId: "settlement",
-          action: "settle_approved_transfer",
-          resource: `request:${requestId.toString()}:${result.authorizedRequest.counterparty}`,
-          status: result.settlement.success ? "ALLOWED" : "FAILED",
-          detail: result.settlement.success
-            ? (result.settlement.explorerUrl ?? "")
-            : (result.settlement.error ?? ""),
+          actorType: "HUMAN",
+          actorId: policyEngine.contractId,
+          action: action === "approve" ? "approve_request" : "reject_request",
+          resource: `request:${requestId.toString()}`,
+          status: action === "approve" ? "ALLOWED" : "BLOCKED",
+          detail: JSON.stringify(result.decision),
         },
       });
+
+      if (result.settlement) {
+        await prisma.transaction.create({
+          data: {
+            amount: Number.parseFloat(result.amountNear),
+            counterparty: result.authorizedRequest.counterparty,
+            status: result.settlement.success ? "EXECUTED" : "FAILED",
+            txHash: result.settlement.txHash ?? null,
+          },
+        });
+
+        await prisma.auditLog.create({
+          data: {
+            actorType: "SYSTEM",
+            actorId: "settlement",
+            action: "settle_approved_transfer",
+            resource: `request:${requestId.toString()}:${result.authorizedRequest.counterparty}`,
+            status: result.settlement.success ? "ALLOWED" : "FAILED",
+            detail: result.settlement.success
+              ? (result.settlement.explorerUrl ?? "")
+              : (result.settlement.error ?? ""),
+          },
+        });
+      }
+    } catch (auditErr) {
+      console.warn("Audit/transaction logging skipped (db unavailable):", auditErr);
     }
 
     return NextResponse.json({

@@ -8,6 +8,10 @@ function getDatasourceUrl(): string {
   if (envUrl && !envUrl.startsWith("file:.")) {
     return envUrl;
   }
+  // On Vercel serverless runtime, filesystem outside /tmp is read-only
+  if (process.env.VERCEL === "1") {
+    return "file:/tmp/dev.db";
+  }
   const cwd = process.cwd();
   const dbPath = cwd.endsWith("web")
     ? path.join(cwd, "prisma", "dev.db")

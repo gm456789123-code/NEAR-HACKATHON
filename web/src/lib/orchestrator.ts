@@ -23,19 +23,23 @@ function describeDecision(decision: ContractDecision): string {
  * Orchestrator: receives a free-text goal, delegates to the Compliance
  * Agent for a policy pre-check (for the "why" shown to the user), then to
  * the Payment Agent to actually call the Policy Engine. Every step is
- * logged to the audit trail.
+ * logged to the audit trail if database is reachable.
  */
 export async function runTask(task: string): Promise<OrchestratorResult> {
-  await prisma.auditLog.create({
-    data: {
-      actorType: "AGENT",
-      actorId: "orchestrator",
-      action: "receive_task",
-      resource: "chat",
-      status: "ALLOWED",
-      detail: task,
-    },
-  });
+  try {
+    await prisma.auditLog.create({
+      data: {
+        actorType: "AGENT",
+        actorId: "orchestrator",
+        action: "receive_task",
+        resource: "chat",
+        status: "ALLOWED",
+        detail: task,
+      },
+    });
+  } catch (err) {
+    console.warn("Audit log write skipped (db unavailable):", err);
+  }
 
   const { intent, clarification } = await extractPaymentIntent(task);
 
@@ -44,55 +48,67 @@ export async function runTask(task: string): Promise<OrchestratorResult> {
   }
 
   const compliance = await review(intent);
-  await prisma.auditLog.create({
-    data: {
-      actorType: "AGENT",
-      actorId: "compliance-agent",
-      action: "check_policy",
-      resource: `${intent.counterparty}:${intent.amount.toString()}`,
-      status: compliance.decision === "Allowed" ? "ALLOWED" : "BLOCKED",
-      detail: compliance.explanation,
-    },
-  });
-
-  const decision = await settle(intent);
-  await prisma.auditLog.create({
-    data: {
-      actorType: "AGENT",
-      actorId: "payment-agent",
-      action: "execute_if_allowed",
-      resource: `${intent.counterparty}:${intent.amount.toString()}`,
-      status:
-        decision === "Allowed"
-          ? "ALLOWED"
-          : "Blocked" in decision
-            ? "BLOCKED"
-            : "PENDING",
-      detail: JSON.stringify(decision),
-    },
-  });
-
-  let settlementNote = "";
-  if (decision === "Allowed") {
-    const transfer = await sendNear(intent.counterparty, intent.amount.toString());
-    await prisma.transaction.create({
+  try {
+    await prisma.auditLog.create({
       data: {
-        amount: intent.amount,
-        counterparty: intent.counterparty,
-        status: transfer.success ? "EXECUTED" : "FAILED",
-        txHash: transfer.txHash ?? null,
+        actorType: "AGENT",
+        actorId: "compliance-agent",
+        action: "check_policy",
+        resource: `${intent.counterparty}:${intent.amount.toString()}`,
+        status: compliance.decision === "Allowed" ? "ALLOWED" : "BLOCKED",
+        detail: compliance.explanation,
       },
     });
+  } catch (err) {
+    console.warn("Audit log write skipped (db unavailable):", err);
+  }
+
+  const decision = await settle(intent);
+  try {
     await prisma.auditLog.create({
       data: {
         actorType: "AGENT",
         actorId: "payment-agent",
-        action: "settle_near_transfer",
+        action: "execute_if_allowed",
         resource: `${intent.counterparty}:${intent.amount.toString()}`,
-        status: transfer.success ? "ALLOWED" : "FAILED",
-        detail: transfer.success ? (transfer.explorerUrl ?? "") : (transfer.error ?? ""),
+        status:
+          decision === "Allowed"
+            ? "ALLOWED"
+            : "Blocked" in decision
+              ? "BLOCKED"
+              : "PENDING",
+        detail: JSON.stringify(decision),
       },
     });
+  } catch (err) {
+    console.warn("Audit log write skipped (db unavailable):", err);
+  }
+
+  let settlementNote = "";
+  if (decision === "Allowed") {
+    const transfer = await sendNear(intent.counterparty, intent.amount.toString());
+    try {
+      await prisma.transaction.create({
+        data: {
+          amount: intent.amount,
+          counterparty: intent.counterparty,
+          status: transfer.success ? "EXECUTED" : "FAILED",
+          txHash: transfer.txHash ?? null,
+        },
+      });
+      await prisma.auditLog.create({
+        data: {
+          actorType: "AGENT",
+          actorId: "payment-agent",
+          action: "settle_near_transfer",
+          resource: `${intent.counterparty}:${intent.amount.toString()}`,
+          status: transfer.success ? "ALLOWED" : "FAILED",
+          detail: transfer.success ? (transfer.explorerUrl ?? "") : (transfer.error ?? ""),
+        },
+      });
+    } catch (err) {
+      console.warn("Transaction/audit write skipped (db unavailable):", err);
+    }
     settlementNote = transfer.success
       ? `\n\nSettled on NEAR testnet: ${transfer.explorerUrl ?? ""}`
       : `\n\nSettlement failed: ${transfer.error ?? "unknown error"} (the counterparty account may not exist on testnet)`;
