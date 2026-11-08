@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bot, Send, Sparkles, ShieldCheck, ClipboardCheck, Wallet, CheckCheck } from "lucide-react";
+import { Send, Sparkles, CheckCheck } from "lucide-react";
+import {
+  AgentEmblem,
+  PolicyShieldIcon,
+  ApprovalWorkflowIcon,
+  NearTokenIcon,
+} from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,9 +21,9 @@ interface Message {
 }
 
 const QUICK_ACTIONS = [
-  { label: "Check policy", icon: ShieldCheck },
-  { label: "Show approvals", icon: ClipboardCheck },
-  { label: "What's my balance?", icon: Wallet },
+  { label: "Check policy", icon: PolicyShieldIcon },
+  { label: "Show approvals", icon: ApprovalWorkflowIcon },
+  { label: "What's my balance?", icon: NearTokenIcon },
 ];
 
 const INITIAL_MESSAGES: Message[] = [
@@ -121,8 +127,8 @@ export function ChatView() {
     <section className="flex flex-1 flex-col min-w-0 min-h-0 h-full overflow-hidden bg-[#060a08]">
       <header className="shrink-0 flex items-center justify-between border-b border-[#14281e] px-6 py-4 bg-[#080d0a]/70 backdrop-blur-md">
         <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#00ec97]/15 text-[#00ec97] border border-[#00ec97]/30 shadow-[0_0_12px_rgba(0,236,151,0.2)]">
-            <Bot className="h-5 w-5" />
+          <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-[#00ec97]/15 text-[#00ec97] border border-[#00ec97]/30 shadow-[0_0_15px_rgba(0,236,151,0.2)]">
+            <AgentEmblem className="h-6 w-6" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
@@ -157,7 +163,7 @@ export function ChatView() {
               {m.role === "agent" && (
                 <div className="flex items-center justify-between border-b border-[#14281e] pb-2 mb-2.5">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-[#00ec97]">
-                    <ShieldCheck className="h-3.5 w-3.5" />
+                    <PolicyShieldIcon className="h-3.5 w-3.5" />
                     <span>Treasury Orchestrator</span>
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-[#6b8f7c]">

@@ -3,24 +3,26 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  MessageSquare,
-  Shield,
-  CheckCircle2,
-  FileText,
-  Users,
   Settings,
   User,
   ChevronDown,
-  Hexagon,
 } from "lucide-react";
+import {
+  TreasuryMeshLogo,
+  ChatBubbleIcon,
+  PolicyShieldIcon,
+  ApprovalWorkflowIcon,
+  AuditLedgerIcon,
+  AgentEmblem,
+} from "@/components/brand";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Chat", icon: MessageSquare },
-  { href: "/policy", label: "Policy", icon: Shield },
-  { href: "/approvals", label: "Approvals", icon: CheckCircle2 },
-  { href: "/audit", label: "Audit Log", icon: FileText },
-  { href: "/agents", label: "Agents", icon: Users },
+  { href: "/", label: "Chat", icon: ChatBubbleIcon },
+  { href: "/policy", label: "Policy", icon: PolicyShieldIcon },
+  { href: "/approvals", label: "Approvals", icon: ApprovalWorkflowIcon },
+  { href: "/audit", label: "Audit Log", icon: AuditLedgerIcon },
+  { href: "/agents", label: "Agents", icon: AgentEmblem },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -30,9 +32,9 @@ export function AppSidebar() {
   return (
     <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-[#14281e] bg-[#060a08]">
       <div className="flex items-center gap-3 px-5 py-5 border-b border-[#14281e]/70">
-        <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#00ec97]/15 text-[#00ec97] border border-[#00ec97]/40 shadow-[0_0_15px_rgba(0,236,151,0.2)]">
-          <Hexagon className="h-5 w-5 fill-[#00ec97]/20" />
-          <span className="absolute h-2 w-2 rounded-full bg-[#00ec97] animate-ping opacity-75" />
+        <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-[#00ec97]/15 text-[#00ec97] border border-[#00ec97]/40 shadow-[0_0_18px_rgba(0,236,151,0.25)]">
+          <TreasuryMeshLogo className="h-7 w-7" />
+          <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-[#00ec97] ring-2 ring-[#060a08] animate-pulse" />
         </div>
         <div>
           <p className="text-sm font-bold leading-tight tracking-tight text-white">Treasury Mesh</p>

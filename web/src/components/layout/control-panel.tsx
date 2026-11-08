@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Shield, Clock, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import {
+  PolicyShieldIcon,
+  ApprovalWorkflowIcon,
+  NearTokenIcon,
+} from "@/components/brand";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { PendingRequest, PolicyView } from "@/lib/near";
@@ -87,7 +92,7 @@ export function ControlPanel() {
         <div className="flex items-center justify-between pb-3 border-b border-[#14281e]/60">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#00ec97]/15 text-[#00ec97] border border-[#00ec97]/30">
-              <Shield className="h-4 w-4" />
+              <PolicyShieldIcon className="h-4 w-4" />
             </div>
             <h2 className="text-sm font-bold text-white">Policy Limits</h2>
           </div>
@@ -104,7 +109,8 @@ export function ControlPanel() {
               <div>
                 <div className="flex justify-between text-xs text-[#8ea998] mb-1.5 font-medium">
                   <span>Daily usage</span>
-                  <span className="text-white font-mono font-semibold">
+                  <span className="text-white font-mono font-semibold flex items-center gap-1">
+                    <NearTokenIcon className="h-3.5 w-3.5 text-[#00ec97]" />
                     {formatNear(policy.daily_spent_today)} / {formatNear(policy.daily_limit)} NEAR
                   </span>
                 </div>
@@ -123,13 +129,15 @@ export function ControlPanel() {
               <div className="space-y-2 border-t border-[#14281e]/60 pt-3 text-xs">
                 <div className="flex justify-between items-center">
                   <span className="text-[#8ea998]">Per-tx limit</span>
-                  <span className="font-semibold text-white font-mono">
+                  <span className="font-semibold text-white font-mono flex items-center gap-1">
+                    <NearTokenIcon className="h-3 w-3 text-[#00ec97]" />
                     {formatNear(policy.per_tx_limit)} NEAR
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[#8ea998]">Auto-approve below</span>
-                  <span className="font-semibold text-[#00ec97] font-mono">
+                  <span className="font-semibold text-[#00ec97] font-mono flex items-center gap-1">
+                    <NearTokenIcon className="h-3 w-3 text-[#00ec97]" />
                     {formatNear(policy.auto_approve_below)} NEAR
                   </span>
                 </div>
@@ -143,7 +151,7 @@ export function ControlPanel() {
         <div className="flex items-center justify-between pb-3 border-b border-[#14281e]/60">
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#00ec97]/15 text-[#00ec97] border border-[#00ec97]/30">
-              <Clock className="h-4 w-4" />
+              <ApprovalWorkflowIcon className="h-4 w-4" />
             </div>
             <h2 className="text-sm font-bold text-white">Pending Approvals</h2>
           </div>

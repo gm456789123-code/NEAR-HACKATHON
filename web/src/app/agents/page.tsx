@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bot } from "lucide-react";
+import { AgentEmblem } from "@/components/brand";
 
 const AGENTS = [
   {
@@ -43,8 +43,8 @@ export default function AgentsPage() {
         {AGENTS.map((agent) => (
           <Card key={agent.name}>
             <CardHeader className="flex-row items-center gap-3 space-y-0">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary">
-                <Bot className="h-4.5 w-4.5" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#00ec97]/15 text-[#00ec97] border border-[#00ec97]/30">
+                <AgentEmblem className="h-5 w-5" />
               </div>
               <div className="flex-1">
                 <CardTitle className="text-sm">{agent.name}</CardTitle>
